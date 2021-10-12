@@ -1,0 +1,47 @@
+{
+    "name": "blomstra/search",
+    "description": "Replaces Flarum search with a fulltext search server.",
+    "keywords": [
+        "extension",
+        "flarum", "blomstra",
+        "search", "fulltext"
+    ],
+    "support": {
+        "email": "helpdesk@blomstra.net",
+        "forum": "https://blomstra.community/t/ext-search"
+    },
+    "type": "flarum-extension",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Daniël Klabbers",
+            "email": "daniel@klabbers.email",
+            "homepage": "http://luceos.com"
+        }
+    ],
+    "require": {
+        "php": ">= 8.0",
+        "flarum/core": "^1.0.0"
+    },
+    "suggest": {
+        "meilisearch/meilisearch-php": "Required to use the MeiliSearch engine (^0.19)."
+    },
+    "extra": {
+        "flarum-extension": {
+            "title": "Search",
+            "category": "feature",
+            "icon": {
+                "image": "resources/assets/logo.svg",
+                "backgroundColor": "#E3E7F1",
+                "backgroundSize": "100%",
+                "backgroundRepeat": "no-repeat",
+                "backgroundPosition": "center"
+            }
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Blomstra\\Search\\": "src/"
+        }
+    }
+}
