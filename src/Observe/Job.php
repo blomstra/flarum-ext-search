@@ -2,33 +2,18 @@
 
 namespace Blomstra\Search\Observe;
 
-use Blomstra\Search\Mapping;
-use Blomstra\Search\Searchables\Searchable;
+use Blomstra\Search\Schemas\Schema;
 use Flarum\Queue\AbstractJob;
-use Illuminate\Database\Eloquent\Model;
-use MeiliSearch\Client;
+use Illuminate\Contracts\Container\Container;
 
-class Job extends AbstractJob
+abstract class Job extends AbstractJob
 {
-    public function __construct(protected Model $model)
-    {}
-
-    public function handle(Client $meili, Mapping $mapping)
+    protected function getSchema(): ?Schema
     {
-        $map = $mapping->get(get_class($this->model));
+        $mapping = resolve(Container::class)->tagged('blomstra.search.schemas');
 
-        /** @var Searchable $searchable */
-        $searchable = new $map['searchable']($this->model);
-
-        $body = array_merge([
-            $searchable->fulltext()
-        ], [
-            $this->model->getKeyName() => $this->model->getKey()
-        ]);
-
-        $meili->index($map['index'])->addDocuments(
-            [$body],
-            $this->model->getKeyName()
-        );
+        return collect($mapping)->first(function (Schema $schema) {
+            return $schema::model() === $this->class;
+        });
     }
 }

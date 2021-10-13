@@ -2,29 +2,23 @@
 
 namespace Blomstra\Search;
 
-use Blomstra\Search\Observe\Observer;
+use Blomstra\Search\Observe\DeletingJob;
+use Blomstra\Search\Observe\SavingJob;
+use Blomstra\Search\Schemas\DiscussionSchema;
+use Blomstra\Search\Schemas\Schema;
 use Flarum\Foundation\AbstractServiceProvider;
-use Flarum\Post\CommentPost;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use MeiliSearch\Client;
 
 class Provider extends AbstractServiceProvider
 {
     public function register()
     {
-        $this->container->singleton(Mapping::class, function () {
-            return new Mapping([
-                \Flarum\Discussion\Discussion::class => [
-                    'index' => 'discussions',
-                    'searchable' => \Blomstra\Search\Searchables\Discussion::class
-                ],
-                CommentPost::class => [
-                    'index' => 'posts',
-                    'searchable' => null,
-                ]
-            ]);
-        });
+        $this->container->tag([DiscussionSchema::class], 'blomstra.search.schemas');
 
         $this->container->singleton(Client::class, function (Container $container) {
             $config = $container->make('flarum.config') ?? [];
@@ -41,14 +35,24 @@ class Provider extends AbstractServiceProvider
 
     public function boot()
     {
-        /** @var Mapping $searchables */
-        $searchables = $this->container->get(Mapping::class);
+        /** @var array $schemas */
+        $schemas = $this->container->tagged('blomstra.search.schemas');
 
-        $searchables->each(function ($mapped, $model) {
-            forward_static_call(
-                [$model, 'observe'],
-                Observer::class
-            );
-        });
+        /** @var Dispatcher $events */
+        $events = resolve(Dispatcher::class);
+
+        /** @var Queue $queue */
+        $queue = resolve(Queue::class);
+
+        /** @var Schema $schema */
+        foreach ($schemas as $schema) {
+            $schema::savingOn($events, function ($model) use ($schema, $queue) {
+                $queue->push(new SavingJob($schema::model(), Collection::make([$model])));
+            });
+
+            $schema::deletingOn($events, function ($model) use ($schema, $queue) {
+                $queue->push(new DeletingJob($schema::model(), Collection::make([$model])));
+            });
+        }
     }
 }
