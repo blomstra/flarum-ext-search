@@ -7,6 +7,9 @@ use Flarum\Discussion\Discussion;
 use Flarum\Discussion\Event\Deleted;
 use Flarum\Discussion\Event\Hidden;
 use Flarum\Discussion\Event\Started;
+use Flarum\Group\Group;
+use Flarum\Group\Permission;
+use Flarum\Tags\Tag;
 use Illuminate\Contracts\Events\Dispatcher;
 
 class DiscussionSchema extends Schema
@@ -15,8 +18,46 @@ class DiscussionSchema extends Schema
     {
         $filters = [];
 
+        $permissions = null;
+
         if ($this->extensionEnabled('flarum-tags')) {
-            $filters['tags'] = $discussion->tags->pluck('id')->toArray();
+            /** @var \Illuminate\Database\Eloquent\Collection $tags */
+            $tags = $discussion->tags;
+
+            $filters['tags'] = $tags->pluck('id')->toArray();
+            $tagPermissions = Permission::query()
+                ->whereIn(
+                    'permission',
+                    $tags->pluck('id')->map(function (int $id) {
+                        return "tag$id.viewForum";
+                    })
+                )->get();
+
+            $permissions = $tags->map(function (Tag $tag) use ($tagPermissions) {
+                $permissions = $tagPermissions->where('permission', "tag$tag->id.viewForum");
+
+                if ($tag->is_restricted) {
+                    $permissions = $permissions->add(['group_id' => Group::ADMINISTRATOR_ID]);
+                }
+
+                return $permissions->pluck('group_id');
+            })->flatten();
+        }
+
+        if (! $permissions) {
+            $permissions = Permission::query()
+                ->where('permission', 'viewForum')
+                ->pluck('group_id')
+                ->get();
+        }
+
+        $filters['groups'] = $permissions->toArray();
+
+        $filters['private'] = $discussion->is_private;
+
+        if ($this->extensionEnabled('fof-byobu')) {
+            $filters['recipient-users'] = $discussion->recipientUsers->pluck('id')->toArray();
+            $filters['recipient-groups'] = $discussion->recipientGroups->pluck('id')->toArray();
         }
 
         return $filters;
