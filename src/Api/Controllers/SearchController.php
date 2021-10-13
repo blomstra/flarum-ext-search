@@ -5,6 +5,7 @@ namespace Blomstra\Search\Api\Controllers;
 use Blomstra\Search\Schemas\Schema;
 use Flarum\Api\Controller\AbstractListController;
 use Flarum\Extension\ExtensionManager;
+use Flarum\Group\Group;
 use Flarum\Http\RequestUtil;
 use Flarum\User\User;
 use Illuminate\Contracts\Container\Container;
@@ -62,13 +63,30 @@ class SearchController extends AbstractListController
         return $manager->isEnabled($extension);
     }
 
-    protected function getFilters(User $actor): array
+    protected function getFilters(User $actor): string
     {
-        $filters = [];
+        /** @var Collection $groups */
+        $groups = $actor->groups->pluck('id');
 
-        $filters = array_merge($filters, $actor->groups->pluck('id')->map(function(int $id) {
-            return ["groups = $id"];
-        })->toArray());
+        $groups->add(Group::GUEST_ID);
+
+        if ($actor->is_email_confirmed) $groups->add(Group::MEMBER_ID);
+
+        $filters = sprintf(
+            '(%s)',
+            join(' OR ', $groups->map(function(int $id) {
+                return "groups = $id";
+            })->toArray())
+        );
+
+        if ($this->extensionEnabled('fof-byobu')) {
+            $filters .= sprintf(
+                " OR (private = true AND (recipient-users = $actor->id OR %s))",
+                join(' OR ', $groups->map(function(int $id) {
+                    return "recipient-groups = $id";
+                })->toArray())
+            );
+        }
 
         return $filters;
     }
