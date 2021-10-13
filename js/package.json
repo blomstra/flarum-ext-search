@@ -1,19 +1,23 @@
 {
-    "private": true,
-    "name": "@blomstra/realtime",
-    "dependencies": {
-        "flarum-webpack-config": "^1.0.0",
-        "lodash-es": "^4.17.14",
-        "pusher-js": "^7.0.3",
-        "webpack": "^4.43.0",
-        "webpack-cli": "^3.3.11"
-    },
-    "scripts": {
-        "dev": "webpack --mode development --watch",
-        "build": "webpack --mode production",
-        "lint": "prettier --single-quote --trailing-comma es5 --print-width 150 --tab-width 4 --write src"
-    },
-    "devDependencies": {
-        "prettier": "^2.3.1"
-    }
+  "name": "@blomstra/realtime",
+  "private": true,
+  "version": "0.0.0",
+  "prettier": "@flarum/prettier-config",
+  "dependencies": {
+    "flarum-webpack-config": "^1.0.0",
+    "pusher-js": "^7.0.3",
+    "webpack": "^4.46.0",
+    "webpack-cli": "^4.9.0",
+    "@flarum/prettier-config": "^1.0.0",
+    "flarum-tsconfig": "^1.0.2"
+  },
+  "scripts": {
+    "dev": "webpack --mode development --watch",
+    "build": "webpack --mode production",
+    "format": "prettier --write src",
+    "format-check": "prettier --check src"
+  },
+  "devDependencies": {
+    "prettier": "^2.4.1"
+  }
 }
