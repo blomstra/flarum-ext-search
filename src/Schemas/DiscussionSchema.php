@@ -44,11 +44,10 @@ class DiscussionSchema extends Schema
             })->flatten();
         }
 
-        if (! $permissions) {
+        if (! $permissions || $permissions->isEmpty()) {
             $permissions = Permission::query()
                 ->where('permission', 'viewForum')
-                ->pluck('group_id')
-                ->get();
+                ->pluck('group_id');
         }
 
         $filters['groups'] = $permissions->toArray();
