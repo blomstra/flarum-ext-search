@@ -11,7 +11,7 @@ return [
         ->js(__DIR__ . '/js/dist/forum.js'),
 
     (new Flarum\Routes('api'))
-        ->get('blomstra/search', 'blomstra.search', Api\Controllers\SearchController::class),
+        ->get('/blomstra/search/{index}', 'blomstra.search', Api\Controllers\SearchController::class),
 
     (new Flarum\Console)
         ->command(Commands\RebuildDocumentsCommand::class)

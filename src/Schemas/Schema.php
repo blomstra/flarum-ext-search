@@ -19,6 +19,8 @@ abstract class Schema
 
     abstract public static function model(): string;
 
+    abstract public static function serializer(): string;
+
     abstract public static function savingOn(Dispatcher $events, callable $callable);
     abstract public static function deletingOn(Dispatcher $events, callable $callable);
 }

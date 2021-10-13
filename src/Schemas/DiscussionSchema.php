@@ -2,6 +2,7 @@
 
 namespace Blomstra\Search\Schemas;
 
+use Flarum\Api\Serializer\DiscussionSerializer;
 use Flarum\Discussion\Discussion;
 use Flarum\Discussion\Event\Deleted;
 use Flarum\Discussion\Event\Hidden;
@@ -37,6 +38,11 @@ class DiscussionSchema extends Schema
     public static function model(): string
     {
         return Discussion::class;
+    }
+
+    public static function serializer(): string
+    {
+        return DiscussionSerializer::class;
     }
 
     public static function savingOn(Dispatcher $events, callable $callable)
