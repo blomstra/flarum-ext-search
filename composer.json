@@ -31,8 +31,7 @@
             "category": "feature",
             "icon": {
                 "image": "resources/assets/logo.png",
-                "backgroundColor": "#E3E7F1",
-                "backgroundSize": "100%",
+                "backgroundSize": "95%",
                 "backgroundRepeat": "no-repeat",
                 "backgroundPosition": "center"
             }

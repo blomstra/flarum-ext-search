@@ -54,7 +54,7 @@ class SearchController extends AbstractListController
 
         $ids = Collection::make(Arr::get($result, 'hits.hits'))->pluck('_id')->toArray();
 
-        return $schema::model()::query()->findMany($ids);
+        return $schema::query()->findMany($ids);
     }
 
     protected function getSchema(string $index): ?Schema

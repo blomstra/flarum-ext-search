@@ -97,8 +97,6 @@ class DiscussionSchema extends Schema
     public static function deletingOn(Dispatcher $events, callable $callable)
     {
         $events->listen([Deleted::class, Hidden::class], function ($event) use ($callable) {
-            if ($event->discussion->is_private) return;
-
             return $callable($event->discussion);
         });
     }

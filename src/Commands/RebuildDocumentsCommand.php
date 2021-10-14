@@ -39,7 +39,8 @@ class RebuildDocumentsCommand extends Command
 
             $total = 0;
 
-            $model::query()->chunk(50, function (Collection $collection) use ($model, $queue, &$total) {
+            $schema::query()->chunk(50, function (Collection $collection) use ($model, $queue, &$total) {
+
                 $queue->push(new SavingJob($model, $collection));
 
                 $this->info("Pushed {$collection->count()} into the index.");

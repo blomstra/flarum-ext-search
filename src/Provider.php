@@ -4,6 +4,7 @@ namespace Blomstra\Search;
 
 use Blomstra\Search\Observe\DeletingJob;
 use Blomstra\Search\Observe\SavingJob;
+use Blomstra\Search\Schemas\CommentPostSchema;
 use Blomstra\Search\Schemas\DiscussionSchema;
 use Blomstra\Search\Schemas\Schema;
 use Elasticsearch\ClientBuilder;
@@ -19,7 +20,8 @@ class Provider extends AbstractServiceProvider
 {
     public function register()
     {
-        $this->container->tag([DiscussionSchema::class], 'blomstra.search.schemas');
+//        $this->container->tag([DiscussionSchema::class], 'blomstra.search.schemas');
+        $this->container->tag([CommentPostSchema::class], 'blomstra.search.schemas');
 
         $this->container->singleton('blomstra.search.elastic', function (Container $container) {
             $config = $container->make('flarum.config') ?? [];
