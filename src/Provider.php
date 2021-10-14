@@ -26,11 +26,18 @@ class Provider extends AbstractServiceProvider
 
             $elastic = Arr::get($config, 'elastic');
 
-            return ClientBuilder::create()
+            $builder = ClientBuilder::create()
                 ->setHosts([$elastic['endpoint']])
-                ->setBasicAuthentication($elastic['username'], $elastic['password'])
-                ->setLogger($container->make(LoggerInterface::class))
-                ->build();
+                ->setLogger($container->make(LoggerInterface::class));
+
+            if ($elastic['api-key'] ?? false) {
+                $builder->setApiKey($elastic['api-id'], $elastic['api-key']);
+            }
+            if ($elastic['username'] ?? false) {
+                $builder->setBasicAuthentication($elastic['username'], $elastic['password']);
+            }
+
+            return $builder->build();
         });
     }
 
