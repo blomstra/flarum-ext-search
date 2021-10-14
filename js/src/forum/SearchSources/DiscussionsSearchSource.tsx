@@ -18,7 +18,7 @@ export default class DiscussionsSearchSource implements SearchSource {
   /**
    * Model name used for assembling API endpoint URL, and for frontend DOM.
    */
-  private type = 'discussions';
+  private type = 'posts';
 
   async search(query: string): Promise<void> {
     query = query.toLowerCase();
