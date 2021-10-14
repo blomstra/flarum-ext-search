@@ -2,6 +2,7 @@
 
 namespace Blomstra\Search\Api\Controllers;
 
+use Blomstra\Search\Elasticsearch\TermsQuery;
 use Blomstra\Search\Schemas\Schema;
 use Elasticsearch\Client;
 use Flarum\Api\Controller\AbstractListController;
@@ -13,6 +14,10 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Psr\Http\Message\ServerRequestInterface;
+use Spatie\ElasticsearchQueryBuilder\Builder;
+use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
+use Spatie\ElasticsearchQueryBuilder\Queries\MultiMatchQuery;
+use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 use Tobscure\JsonApi\Document;
 
 class SearchController extends AbstractListController
@@ -30,22 +35,22 @@ class SearchController extends AbstractListController
 
         $schema = $this->getSchema($index);
 
-        $result = $client->search([
-            'index' => $index,
-            'from' => $this->extractOffset($request),
-            'size' => $this->extractLimit($request),
-            'sort' => $this->extractSort($request),
-            'body' => [
-                'query' => [
-                    'multi_match' => [
-                        'query' => $filters['q'],
-                        'fields' => array_keys($schema->fulltext(new ($schema::model())))
-                    ]
-                ]
-            ]
-        ]);
-
         $this->serializer = $schema::serializer();
+
+        $filterQuery = (BoolQuery::create())
+            ->add(
+                MultiMatchQuery::create($filters['q'], array_keys($schema->fulltext(new ($schema::model())))),
+                'must'
+            );
+
+        $result = (new Builder($client))
+            ->index($index)
+            ->size($this->extractLimit($request))
+            ->from($this->extractOffset($request))
+            ->addQuery(
+                $this->addFilters($filterQuery, $actor)
+            )
+            ->search();
 
         $ids = Collection::make(Arr::get($result, 'hits.hits'))->pluck('_id')->toArray();
 
@@ -69,7 +74,7 @@ class SearchController extends AbstractListController
         return $manager->isEnabled($extension);
     }
 
-    protected function getFilters(User $actor): string
+    protected function addFilters(BoolQuery $query, User $actor): BoolQuery
     {
         /** @var Collection $groups */
         $groups = $actor->groups->pluck('id');
@@ -78,22 +83,30 @@ class SearchController extends AbstractListController
 
         if ($actor->is_email_confirmed) $groups->add(Group::MEMBER_ID);
 
-        $filters = sprintf(
-            '(%s)',
-            join(' OR ', $groups->map(function(int $id) {
-                return "groups = $id";
-            })->toArray())
-        );
+        $subQuery = BoolQuery::create()
+            ->add(TermQuery::create('private', 'false'))
+            ->add(TermsQuery::create('groups', $groups->toArray()));
 
-        if ($this->extensionEnabled('fof-byobu')) {
-            $filters .= sprintf(
-                " OR (private = true AND (recipient-users = $actor->id OR %s))",
-                join(' OR ', $groups->map(function(int $id) {
-                    return "recipient-groups = $id";
-                })->toArray())
-            );
+        if ($this->extensionEnabled('fof-byobu') && $actor->exists) {
+            $byobuQuery = BoolQuery::create()
+                ->add(TermQuery::create('private', 'true'), 'should')
+                ->add(
+                    BoolQuery::create()
+                        ->add(TermsQuery::create('recipient-groups', $groups->toArray()))
+                        ->add(TermQuery::create('recipient-users', $actor->id)),
+                    'should'
+                );
+
+            $subQuery = BoolQuery::create()
+                ->add($subQuery, 'should')
+                ->add($byobuQuery, 'should');
         }
 
-        return $filters;
+        $query->add(
+            $subQuery,
+            'filter'
+        );
+
+        return $query;
     }
 }

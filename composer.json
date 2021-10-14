@@ -22,7 +22,8 @@
     "require": {
         "php": ">= 8.0",
         "flarum/core": "^1.0.0",
-        "elasticsearch/elasticsearch": "7.*"
+        "elasticsearch/elasticsearch": "7.*",
+        "spatie/elasticsearch-query-builder": "^1.3.0"
     },
     "extra": {
         "flarum-extension": {

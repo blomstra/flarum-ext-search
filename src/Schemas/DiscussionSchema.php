@@ -18,7 +18,11 @@ class DiscussionSchema extends Schema
     {
         $filters = [];
 
-        $permissions = null;
+        $permissions = collect();
+
+        $globalPermission = Permission::query()
+            ->where('permission', 'viewForum')
+            ->pluck('group_id');
 
         if ($this->extensionEnabled('flarum-tags')) {
             /** @var \Illuminate\Database\Eloquent\Collection $tags */
@@ -44,13 +48,8 @@ class DiscussionSchema extends Schema
             })->flatten();
         }
 
-        if (! $discussion->is_private && (! $permissions || $permissions->isEmpty())) {
-            $permissions = Permission::query()
-                ->where('permission', 'viewForum')
-                ->pluck('group_id');
-
-        } else {
-            $permissions = collect();
+        if (! $discussion->is_private && $permissions->isEmpty()) {
+            $permissions = $globalPermission;
         }
 
         $filters['groups'] = $permissions->toArray();
