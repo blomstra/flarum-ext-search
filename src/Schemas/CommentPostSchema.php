@@ -2,12 +2,14 @@
 
 namespace Blomstra\Search\Schemas;
 
-use Flarum\Api\Serializer\PostSerializer;
+use Flarum\Api\Serializer\DiscussionSerializer;
+use Flarum\Discussion\Discussion;
 use Flarum\Post\CommentPost;
 use Flarum\Post\Event\Deleted;
 use Flarum\Post\Event\Posted;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class CommentPostSchema extends Schema
 {
@@ -17,7 +19,8 @@ class CommentPostSchema extends Schema
             'author' => $post->user_id,
             'created_at' => $post->created_at->toAtomString(),
             'private' => $post->is_private,
-            'groups' => $this->groupsForDiscussion($post->discussion)
+            'groups' => $this->groupsForDiscussion($post->discussion),
+            'discussion_id' => $post->discussion?->id
         ];
 
 
@@ -37,8 +40,8 @@ class CommentPostSchema extends Schema
     public function fulltext(CommentPost $post): array
     {
         return [
-            'title' => $post->discussion->title,
-            'content' => $post->content
+            'title' => $post->discussion?->title,
+            'content' => $post->exists ? $post->content : null,
         ];
     }
 
@@ -55,12 +58,25 @@ class CommentPostSchema extends Schema
     public static function query(): Builder
     {
         return CommentPost::query()
-            ->where('type', CommentPost::$type);
+            ->where('type', CommentPost::$type)
+            ->with('discussion');
+    }
+
+    public static function results(array $hits): \Illuminate\Database\Eloquent\Collection
+    {
+        $postIds = Collection::make($hits)->keyBy('_source.discussion_id')->pluck('_id');
+        $discussionIds = Collection::make($hits)->pluck('_source.discussion_id');
+
+        return Discussion::query()->findMany($discussionIds)->map(function (Discussion $discussion) use ($postIds) {
+            $discussion->most_relevant_post_id = $postIds->get($discussion->id);
+
+            return $discussion;
+        })->load('mostRelevantPost');
     }
 
     public static function serializer(): string
     {
-        return PostSerializer::class;
+        return DiscussionSerializer::class;
     }
 
     public static function savingOn(Dispatcher $events, callable $callable)

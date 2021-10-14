@@ -14,6 +14,8 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Psr\Http\Message\ServerRequestInterface;
+use Spatie\ElasticsearchQueryBuilder\Aggregations\TermsAggregation;
+use Spatie\ElasticsearchQueryBuilder\Aggregations\TopHitsAggregation;
 use Spatie\ElasticsearchQueryBuilder\Builder;
 use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\MultiMatchQuery;
@@ -50,11 +52,13 @@ class SearchController extends AbstractListController
             ->addQuery(
                 $this->addFilters($filterQuery, $actor)
             )
+            ->addAggregation(
+                TermsAggregation::create('discussions', 'discussion_id')
+                    ->aggregation(TopHitsAggregation::create('hits', 1))
+            )
             ->search();
 
-        $ids = Collection::make(Arr::get($result, 'hits.hits'))->pluck('_id')->toArray();
-
-        return $schema::query()->findMany($ids);
+        return $schema::results(Arr::get($result, 'hits.hits'));
     }
 
     protected function getSchema(string $index): ?Schema

@@ -9,6 +9,7 @@ use Flarum\Group\Permission;
 use Flarum\Tags\Tag;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 abstract class Schema
 {
@@ -24,6 +25,7 @@ abstract class Schema
 
     abstract public static function model(): string;
     abstract public static function query(): Builder;
+    abstract public static function results(array $hits): Collection;
 
     abstract public static function serializer(): string;
 
@@ -39,7 +41,7 @@ abstract class Schema
             ->pluck('group_id');
 
         if ($this->extensionEnabled('flarum-tags')) {
-            /** @var \Illuminate\Database\Eloquent\Collection $tags */
+            /** @var Collection $tags */
             $tags = $discussion->tags;
 
             $filters['tags'] = $tags->pluck('id')->toArray();
