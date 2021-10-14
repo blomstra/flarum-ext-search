@@ -4,12 +4,12 @@ namespace Blomstra\Search\Commands;
 
 use Blomstra\Search\Observe\SavingJob;
 use Blomstra\Search\Schemas\Schema;
+use Elasticsearch\Client;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
-use MeiliSearch\Client;
 
 class RebuildDocumentsCommand extends Command
 {
@@ -24,8 +24,8 @@ class RebuildDocumentsCommand extends Command
         /** @var Queue $queue */
         $queue = $container->make(Queue::class);
 
-        /** @var Client $meili */
-        $meili = $container->make(Client::class);
+        /** @var Client $client */
+        $client = $container->make('blomstra.search.elastic');
 
         /** @var Schema $schema */
         foreach ($schemas as $schema) {
@@ -33,13 +33,21 @@ class RebuildDocumentsCommand extends Command
             $model = $schema::model();
 
             // Flush the index.
-            if ($this->option('flush')) $meili->index($schema::index())->delete();
+            if ($this->option('flush')) $client->indices()->delete([
+                'index' => $schema::index()
+            ]);
 
-            $model::query()->chunk(50, function (Collection $collection) use ($model, $queue) {
+            $total = 0;
+
+            $model::query()->chunk(50, function (Collection $collection) use ($model, $queue, &$total) {
                 $queue->push(new SavingJob($model, $collection));
 
-                $this->info("Pushed {$collection->count()} into the index");
+                $this->info("Pushed {$collection->count()} into the index.");
+
+                $total += $collection->count();
             });
+
+            $this->info("Pushed a total of $total into the index.");
         }
     }
 }

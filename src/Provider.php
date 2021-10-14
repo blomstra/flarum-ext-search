@@ -6,13 +6,14 @@ use Blomstra\Search\Observe\DeletingJob;
 use Blomstra\Search\Observe\SavingJob;
 use Blomstra\Search\Schemas\DiscussionSchema;
 use Blomstra\Search\Schemas\Schema;
+use Elasticsearch\ClientBuilder;
 use Flarum\Foundation\AbstractServiceProvider;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
-use MeiliSearch\Client;
+use Psr\Log\LoggerInterface;
 
 class Provider extends AbstractServiceProvider
 {
@@ -20,16 +21,16 @@ class Provider extends AbstractServiceProvider
     {
         $this->container->tag([DiscussionSchema::class], 'blomstra.search.schemas');
 
-        $this->container->singleton(Client::class, function (Container $container) {
+        $this->container->singleton('blomstra.search.elastic', function (Container $container) {
             $config = $container->make('flarum.config') ?? [];
 
-            $meili = Arr::get($config, 'meili');
+            $elastic = Arr::get($config, 'elastic');
 
-            if (! $meili) {
-                return null;
-            }
-
-            return new Client($meili);
+            return ClientBuilder::create()
+                ->setHosts([$elastic['endpoint']])
+                ->setBasicAuthentication($elastic['username'], $elastic['password'])
+                ->setLogger($container->make(LoggerInterface::class))
+                ->build();
         });
     }
 

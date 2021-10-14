@@ -21,10 +21,8 @@
     ],
     "require": {
         "php": ">= 8.0",
-        "flarum/core": "^1.0.0"
-    },
-    "suggest": {
-        "meilisearch/meilisearch-php": "Required to use the MeiliSearch engine (^0.19)."
+        "flarum/core": "^1.0.0",
+        "elasticsearch/elasticsearch": "7.*"
     },
     "extra": {
         "flarum-extension": {

@@ -64,7 +64,7 @@ export default class DiscussionsSearchSource implements SearchSource {
 
     return (
       <>
-        <li className="Dropdown-header">{app.translator.trans('core.forum.search.discussions_heading')}</li>,
+        <li className="Dropdown-header">{app.translator.trans('core.forum.search.discussions_heading')}</li>
         <li>
           <LinkButton icon="fas fa-search" href={app.route('index', { q: query })}>
             {app.translator.trans('core.forum.search.all_discussions_button', { query })}
