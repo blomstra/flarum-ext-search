@@ -1,10 +1,10 @@
 {
     "name": "blomstra/search",
-    "description": "Replaces Flarum search with a fulltext search server.",
+    "description": "Replaces Flarum search with a fulltext elastic search server.",
     "keywords": [
         "extension",
         "flarum", "blomstra",
-        "search", "fulltext"
+        "search", "fulltext", "elastic", "elasticsearch"
     ],
     "support": {
         "email": "helpdesk@blomstra.net",
@@ -30,7 +30,7 @@
             "title": "Search",
             "category": "feature",
             "icon": {
-                "image": "resources/assets/logo.svg",
+                "image": "resources/assets/logo.png",
                 "backgroundColor": "#E3E7F1",
                 "backgroundSize": "100%",
                 "backgroundRepeat": "no-repeat",

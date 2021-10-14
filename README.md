@@ -69,3 +69,5 @@ Reach out to us via https://helpdesk.blomstra.net. We will get back to you as so
 - Blomstra provides managed Flarum hosting.
 - https://blomstra.net
 - https://blomstra.community/t/ext-search
+
+Icon made by [Freepik](https://www.freepik.com) from [Flaticon](https://www.flaticon.com/).
