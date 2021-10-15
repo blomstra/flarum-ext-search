@@ -29,33 +29,36 @@ class SavingJob extends Job
             }
 
             // Set up the index
-//            if (! $client->indices()->exists([
-//                'index' => $schema::index(),
-//                'expand_wildcards' => 'none'
-//            ])) {
-//                $client->indices()->create([
-//                    'index' => $schema::index(),
-//                    'body'  => [
-//                        'mappings' => [
-//                            'properties' => $properties
-//                        ],
-//                        'settings' => [
-//                            'index' => [
-//                                'query' => [
-//                                    'default_field' => array_keys($schema->fulltext($first))
-//                                ]
-//                            ]
-//                        ]
-//                    ]
-//                ]);
-//            }
+            if (! $client->indices()->exists([
+                'index' => resolve('blomstra.search.elastic_index'),
+                'expand_wildcards' => 'none'
+            ])) {
+                $client->indices()->create([
+                    'index' => $schema::index(),
+                    'body'  => [
+                        'mappings' => [
+                            'properties' => $properties
+                        ],
+                        'settings' => [
+                            'index' => [
+                                'query' => [
+                                    'default_field' => array_keys($schema->fulltext($first))
+                                ]
+                            ]
+                        ]
+                    ]
+                ]);
+            }
         }
 
         // Preparing body for storing.
         $body = $this->models->map(function (Model $model) use ($schema) {
             return [
-                ['index' => ['_id' => $model->getKey(), '_index' => $schema::index()]],
+                ['index' => [
+                    '_id' => $model->getKey(), '_index' => resolve('blomstra.search.elastic_index')]
+                ],
                 array_merge(
+                    ['type' => $schema::type()],
                     $schema->fulltext($model),
                     $schema->filters($model))
 

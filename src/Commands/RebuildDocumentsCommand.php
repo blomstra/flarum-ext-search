@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class RebuildDocumentsCommand extends Command
 {
-    protected $signature = 'blomstra:search:documents:rebuild {--flush : Flush the indices}';
+    protected $signature = 'blomstra:search:documents:rebuild {--flush : Flushes ALL the documents inside the index}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
     public function handle(Container $container)
@@ -27,15 +27,15 @@ class RebuildDocumentsCommand extends Command
         /** @var Client $client */
         $client = $container->make('blomstra.search.elastic');
 
+        // Flush the index.
+        if ($this->option('flush')) $client->indices()->delete([
+            'index' => resolve('blomstra.search.elastic_index')
+        ]);
+
         /** @var Schema $schema */
         foreach ($schemas as $schema) {
             /** @var Model $model */
             $model = $schema::model();
-
-            // Flush the index.
-            if ($this->option('flush')) $client->indices()->delete([
-                'index' => $schema::index()
-            ]);
 
             $total = 0;
 

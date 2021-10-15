@@ -21,7 +21,7 @@ abstract class Schema
         return $manager->isEnabled($extension);
     }
 
-    abstract public static function index(): string;
+    abstract public static function type(): string;
 
     abstract public static function model(): string;
     abstract public static function query(): Builder;

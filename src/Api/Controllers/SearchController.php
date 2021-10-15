@@ -6,9 +6,13 @@ use Blomstra\Search\Elasticsearch\TermsQuery;
 use Blomstra\Search\Schemas\Schema;
 use Elasticsearch\Client;
 use Flarum\Api\Controller\AbstractListController;
+use Flarum\Api\Controller\ListDiscussionsController;
+use Flarum\Discussion\Filter\DiscussionFilterer;
+use Flarum\Discussion\Search\DiscussionSearcher;
 use Flarum\Extension\ExtensionManager;
 use Flarum\Group\Group;
 use Flarum\Http\RequestUtil;
+use Flarum\Http\UrlGenerator;
 use Flarum\User\User;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Arr;
@@ -20,33 +24,39 @@ use Spatie\ElasticsearchQueryBuilder\Builder;
 use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\MultiMatchQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
+use Spatie\ElasticsearchQueryBuilder\Sorts\Sort;
 use Tobscure\JsonApi\Document;
 
-class SearchController extends AbstractListController
+class SearchController extends ListDiscussionsController
 {
+    public function __construct()
+    {
+    }
+
     protected function data(ServerRequestInterface $request, Document $document)
     {
         /** @var Client $client */
         $client = resolve('blomstra.search.elastic');
 
-        $index = Arr::get($request->getQueryParams(), 'index');
+        $type = Arr::get($request->getQueryParams(), 'type');
 
         $actor = RequestUtil::getActor($request);
 
         $filters = $this->extractFilter($request);
 
-        $schema = $this->getSchema($index);
+        $schema = $this->getSchema($type);
 
         $this->serializer = $schema::serializer();
 
         $filterQuery = (BoolQuery::create())
             ->add(
-                MultiMatchQuery::create($filters['q'], array_keys($schema->fulltext(new ($schema::model())))),
-                'must'
+                BoolQuery::create()
+                    ->add(MultiMatchQuery::create($filters['q'], array_keys($schema->fulltext(new ($schema::model())))))
+                    ->add(TermQuery::create('type', $type))
             );
 
-        $result = (new Builder($client))
-            ->index($index)
+        $builder = (new Builder($client))
+            ->index(resolve('blomstra.search.elastic_index'))
             ->size($this->extractLimit($request))
             ->from($this->extractOffset($request))
             ->addQuery(
@@ -55,18 +65,23 @@ class SearchController extends AbstractListController
             ->addAggregation(
                 TermsAggregation::create('discussions', 'discussion_id')
                     ->aggregation(TopHitsAggregation::create('hits', 1))
-            )
-            ->search();
+            );
+
+        foreach ($this->extractSort($request) as $field => $direction) {
+            $builder->addSort(new Sort($field, $direction));
+        }
+
+        $result = $builder->search();
 
         return $schema::results(Arr::get($result, 'hits.hits'));
     }
 
-    protected function getSchema(string $index): ?Schema
+    protected function getSchema(string $type): ?Schema
     {
         $mapping = resolve(Container::class)->tagged('blomstra.search.schemas');
 
-        return collect($mapping)->first(function (Schema $schema) use ($index) {
-            return $schema::index() === $index;
+        return collect($mapping)->first(function (Schema $schema) use ($type) {
+            return $schema::type() === $type;
         });
     }
 

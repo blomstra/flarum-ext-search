@@ -3,6 +3,7 @@
 namespace Blomstra\Search\Schemas;
 
 use Flarum\Api\Serializer\DiscussionSerializer;
+use Flarum\Api\Serializer\PostSerializer;
 use Flarum\Discussion\Discussion;
 use Flarum\Post\CommentPost;
 use Flarum\Post\Event\Deleted;
@@ -16,22 +17,19 @@ class CommentPostSchema extends Schema
     public function filters(CommentPost $post): array
     {
         $filters = [
+            'type' => CommentPost::$type,
             'author' => $post->user_id,
-            'created_at' => $post->created_at->toAtomString(),
+            'createdAt' => $post->created_at->toAtomString(),
             'private' => $post->is_private,
-            'groups' => $this->groupsForDiscussion($post->discussion),
             'discussion_id' => $post->discussion?->id
         ];
 
-
-        if ($this->extensionEnabled('fof-byobu')) {
-            $filters['recipient-users'] = $post->discussion->recipientUsers->pluck('id')->toArray();
-            $filters['recipient-groups'] = $post->discussion->recipientGroups->pluck('id')->toArray();
+        if ($this->extensionEnabled('flarum-flags')) {
+            $filters['flags_count'] = $post->flags->count();
         }
 
-        if ($this->extensionEnabled('fof-best-answer')) {
-            $filters['best-answer-set'] = $post->discussion->best_answer_post_id !== null;
-            $filters['best-answer-set-at'] = $post->discussion->best_answer_set_at?->toAtomString();
+        if ($this->extensionEnabled('flarum-approval')) {
+            $filters['approved'] = $post->is_approved;
         }
 
         return $filters;
@@ -40,14 +38,8 @@ class CommentPostSchema extends Schema
     public function fulltext(CommentPost $post): array
     {
         return [
-            'title' => $post->discussion?->title,
-            'content' => $post->exists ? $post->content : null,
+            'content' => $post->content,
         ];
-    }
-
-    public static function index(): string
-    {
-        return 'posts';
     }
 
     public static function model(): string
@@ -91,5 +83,10 @@ class CommentPostSchema extends Schema
         $events->listen(Deleted::class, function (Deleted $event) use ($callable) {
             $callable($event->post);
         });
+    }
+
+    public static function type(): string
+    {
+        return CommentPost::$type;
     }
 }

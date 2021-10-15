@@ -20,14 +20,12 @@ class Provider extends AbstractServiceProvider
 {
     public function register()
     {
-//        $this->container->tag([DiscussionSchema::class], 'blomstra.search.schemas');
         $this->container->tag([CommentPostSchema::class], 'blomstra.search.schemas');
 
-        $this->container->singleton('blomstra.search.elastic', function (Container $container) {
-            $config = $container->make('flarum.config') ?? [];
+        $config = $this->container->make('flarum.config') ?? [];
+        $elastic = Arr::get($config, 'elastic', []);
 
-            $elastic = Arr::get($config, 'elastic');
-
+        $this->container->singleton('blomstra.search.elastic', function (Container $container) use ($elastic) {
             $builder = ClientBuilder::create()
                 ->setHosts([$elastic['endpoint']])
                 ->setLogger($container->make(LoggerInterface::class));
@@ -41,6 +39,8 @@ class Provider extends AbstractServiceProvider
 
             return $builder->build();
         });
+
+        $this->container->instance('blomstra.search.elastic_index', Arr::get($elastic, 'index', 'flarum'));
     }
 
     public function boot()
