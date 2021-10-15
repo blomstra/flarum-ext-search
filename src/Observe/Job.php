@@ -2,18 +2,26 @@
 
 namespace Blomstra\Search\Observe;
 
-use Blomstra\Search\Schemas\Schema;
+use Blomstra\Search\Documents\Document;
 use Flarum\Queue\AbstractJob;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 
 abstract class Job extends AbstractJob
 {
-    protected function getSchema(): ?Schema
-    {
-        $mapping = resolve(Container::class)->tagged('blomstra.search.schemas');
+    public function __construct(protected Collection $models)
+    {}
 
-        return collect($mapping)->first(function (Schema $schema) {
-            return $schema::model() === $this->class;
+    protected function getDocument(): ?Document
+    {
+        $documents = resolve(Container::class)->tagged('blomstra.search.documents');
+
+        /** @var Model $model */
+        $model = $this->models->first();
+
+        return collect($documents)->first(function (Document $document) use ($model) {
+            return $document->model() === get_class($model);
         });
     }
 }

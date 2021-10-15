@@ -3,26 +3,26 @@
 namespace Blomstra\Search\Observe;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Collection;
 use MeiliSearch\Client;
 
 class DeletingJob extends Job
 {
-    public function __construct(protected string $class, protected Collection $models)
-    {}
-
     public function handle(Client $meili)
     {
-        $schema = $this->getSchema();
+        if ($this->models->isEmpty()) return;
 
-        if (! $schema) return;
+        $document = $this->getDocument();
 
-        $keys = $this->models->map(function (Model $model) {
-            return $model->getKey();
-        });
+        if (! $document) return;
 
-        $meili->index($schema::index())->deleteDocuments(
-            $keys
-        );
+        $keys = $this->models->map(function (Model $model) use ($document) {
+            return (new $document)($model)->id();
+        })->toArray();
+
+        $meili
+            ->index(resolve('blomstra.search.elastic_index'))
+            ->deleteDocuments(
+                $keys
+            );
     }
 }

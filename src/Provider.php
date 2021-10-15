@@ -2,11 +2,11 @@
 
 namespace Blomstra\Search;
 
+use Blomstra\Search\Documents;
 use Blomstra\Search\Observe\DeletingJob;
 use Blomstra\Search\Observe\SavingJob;
-use Blomstra\Search\Schemas\CommentPostSchema;
-use Blomstra\Search\Schemas\DiscussionSchema;
 use Blomstra\Search\Schemas\Schema;
+use Blomstra\Search\Seeders;
 use Elasticsearch\ClientBuilder;
 use Flarum\Foundation\AbstractServiceProvider;
 use Illuminate\Contracts\Container\Container;
@@ -20,7 +20,15 @@ class Provider extends AbstractServiceProvider
 {
     public function register()
     {
-        $this->container->tag([CommentPostSchema::class], 'blomstra.search.schemas');
+        $this->container->tag([
+            Documents\CommentDocument::class,
+            Documents\DiscussionDocument::class
+        ], 'blomstra.search.documents');
+
+        $this->container->tag([
+            Seeders\CommentSeeder::class,
+            Seeders\DiscussionSeeder::class
+        ], 'blomstra.search.seeders');
 
         $config = $this->container->make('flarum.config') ?? [];
         $elastic = Arr::get($config, 'elastic', []);
@@ -45,8 +53,8 @@ class Provider extends AbstractServiceProvider
 
     public function boot()
     {
-        /** @var array $schemas */
-        $schemas = $this->container->tagged('blomstra.search.schemas');
+        /** @var array|string[] $seeders */
+        $seeders = $this->container->tagged('blomstra.search.seeders');
 
         /** @var Dispatcher $events */
         $events = resolve(Dispatcher::class);
@@ -54,14 +62,14 @@ class Provider extends AbstractServiceProvider
         /** @var Queue $queue */
         $queue = resolve(Queue::class);
 
-        /** @var Schema $schema */
-        foreach ($schemas as $schema) {
-            $schema::savingOn($events, function ($model) use ($schema, $queue) {
-                $queue->push(new SavingJob($schema::model(), Collection::make([$model])));
+        /** @var string|Seeders\Seeder $seeder */
+        foreach ($seeders as $seeder) {
+            $seeder::savingOn($events, function ($model) use ($queue) {
+                $queue->push(new SavingJob(Collection::make([$model])));
             });
 
-            $schema::deletingOn($events, function ($model) use ($schema, $queue) {
-                $queue->push(new DeletingJob($schema::model(), Collection::make([$model])));
+            $seeder::deletingOn($events, function ($model) use ($queue) {
+                $queue->push(new DeletingJob(Collection::make([$model])));
             });
         }
     }

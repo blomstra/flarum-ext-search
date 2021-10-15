@@ -3,13 +3,12 @@
 namespace Blomstra\Search\Commands;
 
 use Blomstra\Search\Observe\SavingJob;
-use Blomstra\Search\Schemas\Schema;
+use Blomstra\Search\Seeders\Seeder;
 use Elasticsearch\Client;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Eloquent\Model;
 
 class RebuildDocumentsCommand extends Command
 {
@@ -18,8 +17,8 @@ class RebuildDocumentsCommand extends Command
 
     public function handle(Container $container)
     {
-        /** @var array $schemas */
-        $schemas = $container->tagged('blomstra.search.schemas');
+        /** @var array $seeders */
+        $seeders = $container->tagged('blomstra.search.seeders');
 
         /** @var Queue $queue */
         $queue = $container->make(Queue::class);
@@ -29,19 +28,14 @@ class RebuildDocumentsCommand extends Command
 
         // Flush the index.
         if ($this->option('flush')) $client->indices()->delete([
-            'index' => resolve('blomstra.search.elastic_index')
+            'index' => $container->make('blomstra.search.elastic_index')
         ]);
 
-        /** @var Schema $schema */
-        foreach ($schemas as $schema) {
-            /** @var Model $model */
-            $model = $schema::model();
+        /** @var Seeder $seeder */
+        foreach ($seeders as $seeder) {
+            $seeder->query()->chunk(50, function (Collection $collection) use ($queue, &$total) {
 
-            $total = 0;
-
-            $schema::query()->chunk(50, function (Collection $collection) use ($model, $queue, &$total) {
-
-                $queue->push(new SavingJob($model, $collection));
+                $queue->push(new SavingJob($collection));
 
                 $this->info("Pushed {$collection->count()} into the index.");
 

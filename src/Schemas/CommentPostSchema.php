@@ -3,7 +3,6 @@
 namespace Blomstra\Search\Schemas;
 
 use Flarum\Api\Serializer\DiscussionSerializer;
-use Flarum\Api\Serializer\PostSerializer;
 use Flarum\Discussion\Discussion;
 use Flarum\Post\CommentPost;
 use Flarum\Post\Event\Deleted;
