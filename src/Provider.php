@@ -2,10 +2,8 @@
 
 namespace Blomstra\Search;
 
-use Blomstra\Search\Documents;
 use Blomstra\Search\Observe\DeletingJob;
 use Blomstra\Search\Observe\SavingJob;
-use Blomstra\Search\Schemas\Schema;
 use Blomstra\Search\Seeders;
 use Elasticsearch\ClientBuilder;
 use Flarum\Foundation\AbstractServiceProvider;
@@ -21,13 +19,8 @@ class Provider extends AbstractServiceProvider
     public function register()
     {
         $this->container->tag([
-            Documents\CommentDocument::class,
-            Documents\DiscussionDocument::class
-        ], 'blomstra.search.documents');
-
-        $this->container->tag([
+            Seeders\DiscussionSeeder::class,
             Seeders\CommentSeeder::class,
-            Seeders\DiscussionSeeder::class
         ], 'blomstra.search.seeders');
 
         $config = $this->container->make('flarum.config') ?? [];
@@ -64,12 +57,12 @@ class Provider extends AbstractServiceProvider
 
         /** @var string|Seeders\Seeder $seeder */
         foreach ($seeders as $seeder) {
-            $seeder::savingOn($events, function ($model) use ($queue) {
-                $queue->push(new SavingJob(Collection::make([$model])));
+            $seeder::savingOn($events, function ($model) use ($queue, $seeder) {
+                $queue->push(new SavingJob(Collection::make([$model]), $seeder));
             });
 
-            $seeder::deletingOn($events, function ($model) use ($queue) {
-                $queue->push(new DeletingJob(Collection::make([$model])));
+            $seeder::deletingOn($events, function ($model) use ($queue, $seeder) {
+                $queue->push(new DeletingJob(Collection::make([$model]), $seeder));
             });
         }
     }

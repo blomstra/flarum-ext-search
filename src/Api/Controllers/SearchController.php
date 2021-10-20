@@ -2,33 +2,39 @@
 
 namespace Blomstra\Search\Api\Controllers;
 
+use Blomstra\Search\Save\Document as ElasticDocument;
 use Blomstra\Search\Elasticsearch\TermsQuery;
-use Blomstra\Search\Schemas\Schema;
 use Elasticsearch\Client;
-use Flarum\Api\Controller\AbstractListController;
 use Flarum\Api\Controller\ListDiscussionsController;
-use Flarum\Discussion\Filter\DiscussionFilterer;
-use Flarum\Discussion\Search\DiscussionSearcher;
+use Flarum\Api\Serializer\DiscussionSerializer;
+use Flarum\Discussion\Discussion;
 use Flarum\Extension\ExtensionManager;
 use Flarum\Group\Group;
 use Flarum\Http\RequestUtil;
-use Flarum\Http\UrlGenerator;
 use Flarum\User\User;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Psr\Http\Message\ServerRequestInterface;
 use Spatie\ElasticsearchQueryBuilder\Aggregations\TermsAggregation;
 use Spatie\ElasticsearchQueryBuilder\Aggregations\TopHitsAggregation;
 use Spatie\ElasticsearchQueryBuilder\Builder;
 use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
-use Spatie\ElasticsearchQueryBuilder\Queries\MultiMatchQuery;
+use Spatie\ElasticsearchQueryBuilder\Queries\MatchQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 use Spatie\ElasticsearchQueryBuilder\Sorts\Sort;
 use Tobscure\JsonApi\Document;
 
 class SearchController extends ListDiscussionsController
 {
+    public $serializer = DiscussionSerializer::class;
+
+    protected array $translateSort = [
+        'lastPostedAt' => 'updated_at',
+        'createdAt' => 'created_at'
+    ];
+
     public function __construct()
     {
     }
@@ -44,17 +50,13 @@ class SearchController extends ListDiscussionsController
 
         $filters = $this->extractFilter($request);
 
-        $schema = $this->getSchema($type);
-
-        $this->serializer = $schema::serializer();
+        $include = array_merge($this->extractInclude($request), ['state']);
 
         $filterQuery = (BoolQuery::create())
             ->add(
                 BoolQuery::create()
-                    ->add(MultiMatchQuery::create($filters['q'], array_keys($schema->fulltext(new ($schema::model())))))
-                    ->add(TermQuery::create('type', $type))
+                    ->add(MatchQuery::create('content', $filters['q']))
             );
-
         $builder = (new Builder($client))
             ->index(resolve('blomstra.search.elastic_index'))
             ->size($this->extractLimit($request))
@@ -62,26 +64,78 @@ class SearchController extends ListDiscussionsController
             ->addQuery(
                 $this->addFilters($filterQuery, $actor)
             )
-            ->addAggregation(
-                TermsAggregation::create('discussions', 'discussion_id')
-                    ->aggregation(TopHitsAggregation::create('hits', 1))
-            );
+//            ->addAggregation(
+//                TermsAggregation::create('discussions', 'discussion_id')
+//                    ->aggregation(TopHitsAggregation::create('hits', 1))
+//            )
+        ;
 
         foreach ($this->extractSort($request) as $field => $direction) {
+            $field = $this->translateSort[$field] ?? $field;
             $builder->addSort(new Sort($field, $direction));
         }
 
         $result = $builder->search();
 
-        return $schema::results(Arr::get($result, 'hits.hits'));
+        Discussion::setStateUser($actor);
+
+        // Eager load groups for use in the policies (isAdmin check)
+        if (in_array('mostRelevantPost.user', $include)) {
+            $include[] = 'mostRelevantPost.user.groups';
+
+            // If the first level of the relationship wasn't explicitly included,
+            // add it so the code below can look for it
+            if (! in_array('mostRelevantPost', $include)) {
+                $include[] = 'mostRelevantPost';
+            }
+        }
+
+        $results = Collection::make(Arr::get($result, 'hits.hits'))
+            ->map(function ($hit) {
+                $id = Str::after($hit['_source']['id'], ':');
+                $type = $hit['_source']['type'];
+
+                if ($type === 'posts') {
+                    /** @var Discussion $discussion */
+                    $discussion = Discussion::whereHas('posts', function ($query) use ($id) {
+                        $query->where('id', $id);
+                    })->first();
+
+                    $discussion->most_relevant_post_id = $id;
+                }
+                if ($type === 'discussions') {
+                    /** @var Discussion $discussion */
+                    $discussion = Discussion::find($id);
+
+                    $discussion->most_relevant_post_id = $discussion->first_post_id;
+                }
+
+                return $discussion;
+            })
+            ->keyBy('id')
+            ->unique();
+
+        $this->loadRelations($results, $include);
+
+        if ($relations = array_intersect($include, ['firstPost', 'lastPost', 'mostRelevantPost'])) {
+            foreach ($results as $discussion) {
+                foreach ($relations as $relation) {
+                    if ($discussion->$relation) {
+                        $discussion->$relation->discussion = $discussion;
+                    }
+                }
+            }
+        }
+
+        return $results;
     }
 
-    protected function getSchema(string $type): ?Schema
+    protected function getDocument(string $type): ?ElasticDocument
     {
-        $mapping = resolve(Container::class)->tagged('blomstra.search.schemas');
+        $documents = resolve(Container::class)->tagged('blomstra.search.documents');
 
-        return collect($mapping)->first(function (Schema $schema) use ($type) {
-            return $schema::type() === $type;
+        return collect($documents)->first(function (ElasticDocument $document) use ($type) {
+            return $document->type() === $type;
         });
     }
 
@@ -103,12 +157,12 @@ class SearchController extends ListDiscussionsController
         if ($actor->is_email_confirmed) $groups->add(Group::MEMBER_ID);
 
         $subQuery = BoolQuery::create()
-            ->add(TermQuery::create('private', 'false'))
+            ->add(TermQuery::create('is_private', 'false'))
             ->add(TermsQuery::create('groups', $groups->toArray()));
 
         if ($this->extensionEnabled('fof-byobu') && $actor->exists) {
             $byobuQuery = BoolQuery::create()
-                ->add(TermQuery::create('private', 'true'), 'should')
+                ->add(TermQuery::create('is_private', 'true'), 'should')
                 ->add(
                     BoolQuery::create()
                         ->add(TermsQuery::create('recipient-groups', $groups->toArray()))

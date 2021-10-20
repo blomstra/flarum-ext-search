@@ -12,7 +12,10 @@ use Illuminate\Database\Eloquent\Collection;
 
 class RebuildDocumentsCommand extends Command
 {
-    protected $signature = 'blomstra:search:documents:rebuild {--flush : Flushes ALL the documents inside the index}';
+    protected $signature = 'blomstra:search:documents:rebuild
+        {--flush : Flushes ALL the documents inside the index}
+        {--mapping : Create property mappings}
+        {--max-id= : Limits for each object the number of items to seed}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
     public function handle(Container $container)
@@ -27,20 +30,47 @@ class RebuildDocumentsCommand extends Command
         $client = $container->make('blomstra.search.elastic');
 
         // Flush the index.
-        if ($this->option('flush')) $client->indices()->delete([
-            'index' => $container->make('blomstra.search.elastic_index')
-        ]);
+        if ($this->option('flush')) {
+            $client->indices()->delete([
+                'index' => $container->make('blomstra.search.elastic_index'),
+                'ignore_unavailable' => true
+            ]);
+            $client->indices()->create([
+                'index' => $container->make('blomstra.search.elastic_index')
+            ]);
+        }
+
+        if ($this->option('mapping')) {
+            $client->indices()->putMapping([
+                'index' => $container->make('blomstra.search.elastic_index'),
+                'body' => [
+                    'properties' => [
+                        'content' => ['type' => 'text'],
+                        'created_at' => ['type' => 'date'],
+                        'updated_at' => ['type' => 'date'],
+                        'is_private' => ['type' => 'boolean'],
+                        'is_sticky' => ['type' => 'boolean'],
+                        'groups' => ['type' => 'integer'],
+                        'recipient_groups' => ['type' => 'integer'],
+                        'recipient_users' => ['type' => 'integer'],
+                    ]
+                ]
+            ]);
+        }
 
         /** @var Seeder $seeder */
         foreach ($seeders as $seeder) {
-            $seeder->query()->chunk(50, function (Collection $collection) use ($queue, &$total) {
+            $seeder->query()
+                ->when($this->option('max-id'), function ($query, $id) {
+                    $query->where('id', '<=', $id);
+                })
+                ->chunk(50, function (Collection $collection) use ($queue, &$total, $seeder) {
+                    $queue->push(new SavingJob($collection, $seeder));
 
-                $queue->push(new SavingJob($collection));
+                    $this->info("Pushed into the index, type: {$seeder->type()}, amount: {$collection->count()}.");
 
-                $this->info("Pushed {$collection->count()} into the index.");
-
-                $total += $collection->count();
-            });
+                    $total += $collection->count();
+                });
 
             $this->info("Pushed a total of $total into the index.");
         }

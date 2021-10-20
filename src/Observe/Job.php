@@ -2,26 +2,16 @@
 
 namespace Blomstra\Search\Observe;
 
-use Blomstra\Search\Documents\Document;
+use Blomstra\Search\Seeders\Seeder;
 use Flarum\Queue\AbstractJob;
-use Illuminate\Contracts\Container\Container;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 abstract class Job extends AbstractJob
 {
-    public function __construct(protected Collection $models)
-    {}
+    protected string $index;
 
-    protected function getDocument(): ?Document
+    public function __construct(protected Collection $models, protected Seeder $seeder)
     {
-        $documents = resolve(Container::class)->tagged('blomstra.search.documents');
-
-        /** @var Model $model */
-        $model = $this->models->first();
-
-        return collect($documents)->first(function (Document $document) use ($model) {
-            return $document->model() === get_class($model);
-        });
+        $this->index = resolve('blomstra.search.elastic_index');
     }
 }
