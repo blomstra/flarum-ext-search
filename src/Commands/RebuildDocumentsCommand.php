@@ -14,7 +14,7 @@ class RebuildDocumentsCommand extends Command
 {
     protected $signature = 'blomstra:search:documents:rebuild
         {--flush : Flushes ALL the documents inside the index}
-        {--mapping : Create property mappings}
+        {--mapping : Create property mappings: booleans, dates and fulltext searches}
         {--max-id= : Limits for each object the number of items to seed}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
