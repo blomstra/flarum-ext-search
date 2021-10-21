@@ -28,6 +28,7 @@ export default class DiscussionsSearchSource implements SearchSource {
     const params = {
       filter: { q: query },
       page: { limit: 3 },
+      include: 'mostRelevantPost',
     };
 
     // Construct API search URI
@@ -50,13 +51,13 @@ export default class DiscussionsSearchSource implements SearchSource {
     const queryResults = this.results.get(query) || [];
 
     const results = queryResults.map((discussion: any) => {
-      // const mostRelevantPost = discussion.mostRelevantPost();
+      const mostRelevantPost = discussion.mostRelevantPost();
 
       return (
         <li className="DiscussionSearchResult" data-index={`${this.type}${discussion.id()}`} key={`${this.type}${discussion.id()}`}>
-          <Link href={app.route.discussion(discussion /*, mostRelevantPost && mostRelevantPost.number()*/)}>
+          <Link href={app.route.discussion(discussion, mostRelevantPost && mostRelevantPost.number())}>
             <div className="DiscussionSearchResult-title">{highlight(discussion.title(), query)}</div>
-            {/* {!!mostRelevantPost && <div className="DiscussionSearchResult-excerpt">{highlight(mostRelevantPost.contentPlain(), query, 100)}</div>} */}
+            {!!mostRelevantPost && <div className="DiscussionSearchResult-excerpt">{highlight(mostRelevantPost.contentPlain(), query, 100)}</div>}
           </Link>
         </li>
       );
