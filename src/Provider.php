@@ -41,7 +41,12 @@ class Provider extends AbstractServiceProvider
             return $builder->build();
         });
 
-        $this->container->instance('blomstra.search.elastic_index', Arr::get($elastic, 'index', 'flarum'));
+        $index = env('UUID') ?? Arr::get($elastic, 'index', 'flarum');
+
+        $this->container->instance(
+            'blomstra.search.elastic_index',
+            $index
+        );
     }
 
     public function boot()
