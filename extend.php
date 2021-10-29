@@ -9,6 +9,8 @@ return [
 
     (new Flarum\Frontend('forum'))
         ->js(__DIR__ . '/js/dist/forum.js'),
+    (new Flarum\Frontend('admin'))
+        ->js(__DIR__ . '/js/dist/admin.js'),
 
     (new Flarum\Routes('api'))
         ->get('/blomstra/search/{type}', 'blomstra.search', Api\Controllers\SearchController::class),
