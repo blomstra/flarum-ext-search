@@ -34,6 +34,7 @@ app.initializers.add('blomstra-search', () => {
             setting: 'blomstra-search.elastic-index',
             label: app.translator.trans('blomstra-search.admin.elastic-index.label'),
             help: app.translator.trans('blomstra-search.admin.elastic-index.help'),
+            default: 'flarum',
             type: 'input'
         })
         .registerSetting({
