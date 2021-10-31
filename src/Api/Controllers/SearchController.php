@@ -90,35 +90,45 @@ class SearchController extends ListDiscussionsController
             }
         }
 
+        // we need to retrieve all discussion ids and when the results are posts,
+        // their ids as most relevant post id
         $results = Collection::make(Arr::get($result, 'hits.hits'))
             ->map(function ($hit) {
                 $id = Str::after($hit['_source']['id'], ':');
                 $type = $hit['_source']['type'];
 
                 if ($type === 'posts') {
-                    /** @var Discussion $discussion */
-                    $discussion = Discussion::whereHas('posts', function ($query) use ($id) {
-                        $query->where('id', $id);
-                    })->first();
-
-                    $discussion->most_relevant_post_id = $id;
+                    return [
+                        'most_relevant_post_id' => $id,
+                    ];
+                } else {
+                    return [
+                        'discussion_id' => $id
+                    ];
                 }
-                if ($type === 'discussions') {
-                    /** @var Discussion $discussion */
-                    $discussion = Discussion::find($id);
+            });
 
+        $discussions = Discussion::query()
+            ->whereIn('id', $results->pluck('discussion_id'))
+            ->orWhereHas('posts', function ($query) use ($results) {
+                $query->whereIn('id', $results->pluck('most_relevant_post_id'));
+            })
+            ->get()
+            ->map(function (Discussion $discussion) use ($results) {
+                if (in_array($discussion->id, $results->pluck('discussion_id'))) {
                     $discussion->most_relevant_post_id = $discussion->first_post_id;
+                } else {
+                    $post = $discussion->posts()->whereIn('id', $results->pluck('most_relevant_post_id'))->first();
+                    $discussion->most_relevant_post_id = $post?->id ?? $discussion->first_post_id;
                 }
-
-                return $discussion;
             })
             ->keyBy('id')
             ->unique();
 
-        $this->loadRelations($results, $include);
+        $this->loadRelations($discussions, $include);
 
         if ($relations = array_intersect($include, ['firstPost', 'lastPost', 'mostRelevantPost'])) {
-            foreach ($results as $discussion) {
+            foreach ($discussions as $discussion) {
                 foreach ($relations as $relation) {
                     if ($discussion->$relation) {
                         $discussion->$relation->discussion = $discussion;
@@ -127,7 +137,7 @@ class SearchController extends ListDiscussionsController
             }
         }
 
-        return $results;
+        return $discussions;
     }
 
     protected function getDocument(string $type): ?ElasticDocument

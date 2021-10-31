@@ -14,26 +14,22 @@ app.initializers.add('blomstra-search', () => {
         .for('blomstra-search')
         .registerSetting({
             setting: 'blomstra-search.elastic-endpoint',
-            label: app.translator.trans('blomstra-search.admin.elastic-endpoint.label'),
-            help: app.translator.trans('blomstra-search.admin.elastic-endpoint.help'),
+            label: app.translator.trans('blomstra-search.admin.elastic-endpoint'),
             type: 'input'
         })
         .registerSetting({
             setting: 'blomstra-search.elastic-username',
-            label: app.translator.trans('blomstra-search.admin.elastic-username.label'),
-            help: app.translator.trans('blomstra-search.admin.elastic-username.help'),
+            label: app.translator.trans('blomstra-search.admin.elastic-username'),
             type: 'input'
         })
         .registerSetting({
             setting: 'blomstra-search.elastic-password',
-            label: app.translator.trans('blomstra-search.admin.elastic-password.label'),
-            help: app.translator.trans('blomstra-search.admin.elastic-password.help'),
+            label: app.translator.trans('blomstra-search.admin.elastic-password'),
             type: 'password'
         })
         .registerSetting({
             setting: 'blomstra-search.elastic-index',
-            label: app.translator.trans('blomstra-search.admin.elastic-index.label'),
-            help: app.translator.trans('blomstra-search.admin.elastic-index.help'),
+            label: app.translator.trans('blomstra-search.admin.elastic-index'),
             default: 'flarum',
             type: 'input'
         })
