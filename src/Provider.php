@@ -7,10 +7,10 @@ use Blomstra\Search\Observe\SavingJob;
 use Blomstra\Search\Seeders;
 use Elasticsearch\ClientBuilder;
 use Flarum\Foundation\AbstractServiceProvider;
+use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Queue\Queue;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Psr\Log\LoggerInterface;
 
@@ -23,29 +23,28 @@ class Provider extends AbstractServiceProvider
             Seeders\CommentSeeder::class,
         ], 'blomstra.search.seeders');
 
-        $config = $this->container->make('flarum.config') ?? [];
-        $elastic = Arr::get($config, 'elastic', []);
+        /** @var SettingsRepositoryInterface $settings */
+        $settings = $this->container->make(SettingsRepositoryInterface::class);
 
-        $this->container->singleton('blomstra.search.elastic', function (Container $container) use ($elastic) {
+        $this->container->singleton('blomstra.search.elastic', function (Container $container) use ($settings) {
             $builder = ClientBuilder::create()
-                ->setHosts([$elastic['endpoint']])
+                ->setHosts([$settings->get('blomstra-search.elastic-endpoint')])
                 ->setLogger($container->make(LoggerInterface::class));
 
-            if ($elastic['api-key'] ?? false) {
-                $builder->setApiKey($elastic['api-id'], $elastic['api-key']);
-            }
-            if ($elastic['username'] ?? false) {
-                $builder->setBasicAuthentication($elastic['username'], $elastic['password']);
+            if ($settings->get('blomstra-search.elastic-username')) {
+                $builder->setBasicAuthentication(
+                    $settings->get('blomstra-search.elastic-username'),
+                    $settings->get('blomstra-search.elastic-password')
+                );
             }
 
             return $builder->build();
         });
 
-        $index = env('UUID') ?? Arr::get($elastic, 'index', 'flarum');
 
         $this->container->instance(
             'blomstra.search.elastic_index',
-            $index
+            $settings->get('blomstra-search.elastic-index', 'flarum')
         );
     }
 

@@ -5,6 +5,7 @@ namespace Blomstra\Search\Commands;
 use Blomstra\Search\Observe\SavingJob;
 use Blomstra\Search\Seeders\Seeder;
 use Elasticsearch\Client;
+use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Queue\Queue;
@@ -29,6 +30,11 @@ class RebuildDocumentsCommand extends Command
         /** @var Client $client */
         $client = $container->make('blomstra.search.elastic');
 
+        /** @var SettingsRepositoryInterface $settings */
+        $settings = $container->make(SettingsRepositoryInterface::class);
+
+        $analyzer = $settings->get('blomstra-search.analyzer-language', 'english');
+
         // Flush the index.
         if ($this->option('flush')) {
             $client->indices()->delete([
@@ -36,7 +42,15 @@ class RebuildDocumentsCommand extends Command
                 'ignore_unavailable' => true
             ]);
             $client->indices()->create([
-                'index' => $container->make('blomstra.search.elastic_index')
+                'index' => $container->make('blomstra.search.elastic_index'),
+//                'settings' => [
+//                    'analysis' => [
+//                        'analyzer' => [
+//                            'default' => $analyzer,
+//                            'default_search' => $analyzer
+//                        ]
+//                    ]
+//                ]
             ]);
         }
 
