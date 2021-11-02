@@ -10,51 +10,22 @@ fulltext search with one that is completely relying on the proven elasticsearch 
 - Uses Flarum's group permissions and tags system.
 - Compatible with Friends of Flarum Byōbu.
 
-## Premium
+## Installation
 
-Managed Flarum communities that we host on our platform ([blomstra](https://blomstra.net)) will have access to all premium extensions we publish without additional cost.
-
-Alternative you can see our plans on [extiverse](https://extiverse.com/extension/blomstra/search). After completing your order, check your active [subscriptions](https://extiverse.com/premium/subscriptions) and follow the provided instructions. Then install using:
+Use composer:
 
 ```bash
 composer require blomstra/search:*
 ```
 
-Enable the extension inside the admin area and continue below with the Set up.
+Enable the extension inside the admin area and configure the settings.
 
 ### Set up
-
-You will need a running Elasticsearch instance. Many providers offer these as a managed service, including
-[Stack Hero](https://www.stackhero.io/en/services/Elasticsearch/benefits).
-
-Modify your `config.php` by adding an entry `elastic` like so:
-
-```php
-return [
-    'elastic' => [
-        'endpoint' => 'https://somedomain:9200',
-        'username' => '<username>',
-        'password' => '<password>'
-    ]
-];
-```
-
-Or using an api token:
-
-```php
-return [
-    'elastic' => [
-        'endpoint' => 'https://somedomain:9200',
-        'api-id' => '<id>',
-        'api-key' => '<key>'
-    ]
-];
-```
 
 Enable the extension in your admin area. Now to seed your existing discussions use the following command:
 
 ```
-php flarum blomstra:search:documents:rebuild
+php flarum blomstra:search:documents:rebuild --mapping
 ```
 
 All mutations to discussions are automatically added and removed from the elasticsearch index.
