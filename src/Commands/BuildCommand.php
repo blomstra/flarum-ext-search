@@ -11,11 +11,9 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Database\Eloquent\Collection;
 
-class RebuildDocumentsCommand extends Command
+class BuildCommand extends Command
 {
-    protected $signature = 'blomstra:search:documents:rebuild
-        {--flush : Flushes ALL the documents inside the index}
-        {--mapping : Create property mappings: booleans, dates and fulltext searches}
+    protected $signature = 'blomstra:search:index
         {--max-id= : Limits for each object the number of items to seed}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
@@ -49,34 +47,31 @@ class RebuildDocumentsCommand extends Command
         ];
 
         // Flush the index.
-        if ($this->option('flush')) {
-            $client->indices()->delete([
-                'index' => $index,
-                'ignore_unavailable' => true
-            ]);
+        $client->indices()->delete([
+            'index' => $index,
+            'ignore_unavailable' => true
+        ]);
 
-            $client->indices()->create([
-                'index' => $index,
-                'body' => [
-                    'settings' => [
-                        'analysis' => [
-                            'analyzer' => [
-                                'flarum_analyzer' => [
-                                    'type' => $settings->get('blomstra-search.analyzer-language') ?: 'english'
-                                ]
+        // Create a new index.
+        $client->indices()->create([
+            'index' => $index,
+            'body' => [
+                'settings' => [
+                    'analysis' => [
+                        'analyzer' => [
+                            'flarum_analyzer' => [
+                                'type' => $settings->get('blomstra-search.analyzer-language') ?: 'english'
                             ]
                         ]
                     ]
                 ]
-            ]);
-        }
+            ]
+        ]);
 
-        if ($this->option('mapping')) {
-            $client->indices()->putMapping([
-                'index' => $index,
-                'body' => $properties
-            ]);
-        }
+        $client->indices()->putMapping([
+            'index' => $index,
+            'body' => $properties
+        ]);
 
         /** @var Seeder $seeder */
         foreach ($seeders as $seeder) {

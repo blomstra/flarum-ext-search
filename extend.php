@@ -18,5 +18,5 @@ return [
         ->get('/blomstra/search/{type}', 'blomstra.search', Api\Controllers\SearchController::class),
 
     (new Flarum\Console)
-        ->command(Commands\RebuildDocumentsCommand::class)
+        ->command(Commands\BuildCommand::class)
 ];
