@@ -2,8 +2,8 @@
 
 namespace Blomstra\Search;
 
-use Blomstra\Search\Observe\DeletingJob;
-use Blomstra\Search\Observe\SavingJob;
+use Blomstra\Search\Jobs\DeletingJob;
+use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders;
 use Elasticsearch\ClientBuilder;
 use Flarum\Foundation\AbstractServiceProvider;

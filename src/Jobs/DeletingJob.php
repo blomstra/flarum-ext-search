@@ -1,12 +1,12 @@
 <?php
 
-namespace Blomstra\Search\Observe;
+namespace Blomstra\Search\Jobs;
 
 use Elasticsearch\Client;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
 
-class SavingJob extends Job
+class DeletingJob extends Job
 {
     public function handle(Container $container)
     {
@@ -20,11 +20,9 @@ class SavingJob extends Job
             $document = $this->seeder->toDocument($model);
 
             return [
-                ['index' => ['_index' => $this->index, '_id' => $document->id]],
-                $document->toArray()
+                ['delete' => ['_index' => $this->index, '_id' => $document->id]]
             ];
-        })
-        ->flatten(1);
+        })->flatten(1);
 
         $response = $client->bulk([
             'index' => $this->index,

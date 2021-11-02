@@ -2,7 +2,7 @@
 
 namespace Blomstra\Search\Commands;
 
-use Blomstra\Search\Observe\SavingJob;
+use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders\Seeder;
 use Elasticsearch\Client;
 use Flarum\Settings\SettingsRepositoryInterface;
@@ -59,7 +59,6 @@ class RebuildDocumentsCommand extends Command
                 'index' => $index,
                 'body' => [
                     'settings' => [
-
                         'analysis' => [
                             'analyzer' => [
                                 'flarum_analyzer' => [

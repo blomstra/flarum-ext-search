@@ -35,6 +35,13 @@ All mutations to discussions are automatically added and removed from the elasti
 *I have another question.*
 Reach out to us via https://helpdesk.blomstra.net. We will get back to you as soon as we can. If you have a running subscription please mention when you started your plan and/or which plan you are on. Always add sufficient information when reporting errors. We prefer errors being reported here, but understand that sometimes you can't.
 
+*Can I dispatch the sync jobs to another queue?*
+Yes:
+
+```php
+\Blomstra\Search\Observe\Job::$onQueue = 'sync';
+```
+
 ---
 
 - Blomstra provides managed Flarum hosting.
