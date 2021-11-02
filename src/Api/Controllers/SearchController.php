@@ -53,7 +53,7 @@ class SearchController extends ListDiscussionsController
                 BoolQuery::create()
                     ->add(MatchQuery::create('content', $filters['q']))
             );
-        $builder = (new Builder($this->client))
+        $builder = (new Builder($this->elastic))
             ->index(resolve('blomstra.search.elastic_index'))
             ->size($this->extractLimit($request))
             ->from($this->extractOffset($request))

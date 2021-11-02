@@ -1,6 +1,6 @@
 {
     "name": "blomstra/search",
-    "description": "Replaces Flarum search with a fulltext elastic search server.",
+    "description": "Replaces Flarum search with one powered by an elastic search server.",
     "keywords": [
         "extension",
         "flarum", "blomstra",
