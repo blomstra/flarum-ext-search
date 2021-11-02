@@ -25,7 +25,7 @@ Enable the extension inside the admin area and configure the settings.
 Enable the extension in your admin area. Now to seed your existing discussions use the following command:
 
 ```
-php flarum blomstra:search:documents:rebuild --mapping
+php flarum blomstra:search:build
 ```
 
 All mutations to discussions are automatically added and removed from the elasticsearch index.
