@@ -75,7 +75,7 @@ class SearchController extends ListDiscussionsController
             $builder->addSort(new Sort($field, $direction));
         }
 
-        $result = $builder->search();
+        $response = $builder->search();
 
         Discussion::setStateUser($actor);
 
@@ -92,7 +92,7 @@ class SearchController extends ListDiscussionsController
 
         // we need to retrieve all discussion ids and when the results are posts,
         // their ids as most relevant post id
-        $results = Collection::make(Arr::get($result, 'hits.hits'))
+        $results = Collection::make(Arr::get($response, 'hits.hits'))
             ->map(function ($hit) {
                 $id = Str::after($hit['_source']['id'], ':');
                 $type = $hit['_source']['type'];
@@ -114,8 +114,8 @@ class SearchController extends ListDiscussionsController
                 $query->whereIn('id', $results->pluck('most_relevant_post_id'));
             })
             ->get()
-            ->map(function (Discussion $discussion) use ($results) {
-                if (in_array($discussion->id, $results->pluck('discussion_id'))) {
+            ->each(function (Discussion $discussion) use ($results) {
+                if (in_array($discussion->id, $results->pluck('discussion_id')->toArray())) {
                     $discussion->most_relevant_post_id = $discussion->first_post_id;
                 } else {
                     $post = $discussion->posts()->whereIn('id', $results->pluck('most_relevant_post_id'))->first();

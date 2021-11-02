@@ -21,6 +21,8 @@ class RebuildDocumentsCommand extends Command
 
     public function handle(Container $container)
     {
+        $index = $container->make('blomstra.search.elastic_index');
+
         /** @var array $seeders */
         $seeders = $container->tagged('blomstra.search.seeders');
 
@@ -33,42 +35,47 @@ class RebuildDocumentsCommand extends Command
         /** @var SettingsRepositoryInterface $settings */
         $settings = $container->make(SettingsRepositoryInterface::class);
 
-        $analyzer = $settings->get('blomstra-search.analyzer-language', 'english');
+        $properties = [
+            'properties' => [
+                'content' => ['type' => 'text', 'analyzer' => 'flarum_analyzer'],
+                'created_at' => ['type' => 'date'],
+                'updated_at' => ['type' => 'date'],
+                'is_private' => ['type' => 'boolean'],
+                'is_sticky' => ['type' => 'boolean'],
+                'groups' => ['type' => 'integer'],
+                'recipient_groups' => ['type' => 'integer'],
+                'recipient_users' => ['type' => 'integer'],
+            ]
+        ];
 
         // Flush the index.
         if ($this->option('flush')) {
             $client->indices()->delete([
-                'index' => $container->make('blomstra.search.elastic_index'),
+                'index' => $index,
                 'ignore_unavailable' => true
             ]);
+
             $client->indices()->create([
-                'index' => $container->make('blomstra.search.elastic_index'),
-//                'settings' => [
-//                    'analysis' => [
-//                        'analyzer' => [
-//                            'default' => $analyzer,
-//                            'default_search' => $analyzer
-//                        ]
-//                    ]
-//                ]
+                'index' => $index,
+                'body' => [
+                    'settings' => [
+
+                        'analysis' => [
+                            'analyzer' => [
+                                'flarum_analyzer' => [
+                                    'type' => $settings->get('blomstra-search.analyzer-language') ?: 'english'
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
             ]);
         }
 
         if ($this->option('mapping')) {
             $client->indices()->putMapping([
-                'index' => $container->make('blomstra.search.elastic_index'),
-                'body' => [
-                    'properties' => [
-                        'content' => ['type' => 'text'],
-                        'created_at' => ['type' => 'date'],
-                        'updated_at' => ['type' => 'date'],
-                        'is_private' => ['type' => 'boolean'],
-                        'is_sticky' => ['type' => 'boolean'],
-                        'groups' => ['type' => 'integer'],
-                        'recipient_groups' => ['type' => 'integer'],
-                        'recipient_users' => ['type' => 'integer'],
-                    ]
-                ]
+                'index' => $index,
+                'body' => $properties
             ]);
         }
 
