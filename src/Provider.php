@@ -5,6 +5,7 @@ namespace Blomstra\Search;
 use Blomstra\Search\Jobs\DeletingJob;
 use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders;
+use Elasticsearch\Client;
 use Elasticsearch\ClientBuilder;
 use Flarum\Foundation\AbstractServiceProvider;
 use Flarum\Settings\SettingsRepositoryInterface;
@@ -26,7 +27,7 @@ class Provider extends AbstractServiceProvider
         /** @var SettingsRepositoryInterface $settings */
         $settings = $this->container->make(SettingsRepositoryInterface::class);
 
-        $this->container->singleton('blomstra.search.elastic', function (Container $container) use ($settings) {
+        $this->container->singleton(Client::class, function (Container $container) use ($settings) {
             $builder = ClientBuilder::create()
                 ->setHosts([$settings->get('blomstra-search.elastic-endpoint')])
                 ->setLogger($container->make(LoggerInterface::class));

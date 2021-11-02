@@ -35,15 +35,11 @@ class SearchController extends ListDiscussionsController
         'createdAt' => 'created_at'
     ];
 
-    public function __construct()
-    {
-    }
+    public function __construct(protected Client $elastic)
+    {}
 
     protected function data(ServerRequestInterface $request, Document $document)
     {
-        /** @var Client $client */
-        $client = resolve('blomstra.search.elastic');
-
         $type = Arr::get($request->getQueryParams(), 'type');
 
         $actor = RequestUtil::getActor($request);
@@ -57,7 +53,7 @@ class SearchController extends ListDiscussionsController
                 BoolQuery::create()
                     ->add(MatchQuery::create('content', $filters['q']))
             );
-        $builder = (new Builder($client))
+        $builder = (new Builder($this->client))
             ->index(resolve('blomstra.search.elastic_index'))
             ->size($this->extractLimit($request))
             ->from($this->extractOffset($request))

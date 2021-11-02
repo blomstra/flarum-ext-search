@@ -30,7 +30,7 @@ class RebuildDocumentsCommand extends Command
         $queue = $container->make(Queue::class);
 
         /** @var Client $client */
-        $client = $container->make('blomstra.search.elastic');
+        $client = $container->make(Client::class);
 
         /** @var SettingsRepositoryInterface $settings */
         $settings = $container->make(SettingsRepositoryInterface::class);
