@@ -15,7 +15,8 @@ return [
     (new Flarum\Locales(__DIR__ . '/resources/locale')),
 
     (new Flarum\Routes('api'))
-        ->get('/blomstra/search/{type}', 'blomstra.search', Api\Controllers\SearchController::class),
+        ->get('/blomstra/search/{type}', 'blomstra.search', Api\Controllers\SearchController::class)
+        ->put('/blomstra/search/index', 'blomstra.search.index', Api\Controllers\IndexController::class),
 
     (new Flarum\Console)
         ->command(Commands\BuildCommand::class)
