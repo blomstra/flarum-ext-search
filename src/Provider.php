@@ -3,6 +3,7 @@
 namespace Blomstra\Search;
 
 use Blomstra\Search\Jobs\DeletingJob;
+use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders;
 use Elasticsearch\Client;
@@ -63,11 +64,11 @@ class Provider extends AbstractServiceProvider
         /** @var string|Seeders\Seeder $seeder */
         foreach ($seeders as $seeder) {
             $seeder::savingOn($events, function ($model) use ($queue, $seeder) {
-                $queue->push(new SavingJob(Collection::make([$model]), $seeder));
+                $queue->pushOn(Job::$onQueue, new SavingJob(Collection::make([$model]), $seeder));
             });
 
             $seeder::deletingOn($events, function ($model) use ($queue, $seeder) {
-                $queue->push(new DeletingJob(Collection::make([$model]), $seeder));
+                $queue->pushOn(Job::$onQueue, new DeletingJob(Collection::make([$model]), $seeder));
             });
         }
     }

@@ -2,6 +2,7 @@
 
 namespace Blomstra\Search\Commands;
 
+use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders\Seeder;
 use Elasticsearch\Client;
@@ -80,7 +81,7 @@ class BuildCommand extends Command
                     $query->where('id', '<=', $id);
                 })
                 ->chunk(50, function (Collection $collection) use ($queue, &$total, $seeder) {
-                    $queue->push(new SavingJob($collection, $seeder));
+                    $queue->pushOn(Job::$onQueue, new SavingJob($collection, $seeder));
 
                     $this->info("Pushed into the index, type: {$seeder->type()}, amount: {$collection->count()}.");
 
