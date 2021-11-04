@@ -2,8 +2,10 @@
 
 namespace Blomstra\Search\Jobs;
 
+use Blomstra\Search\Exceptions\SeedingException;
 use Elasticsearch\Client;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 
 class SavingJob extends Job
 {
@@ -27,5 +29,16 @@ class SavingJob extends Job
             'body' => $body->toArray(),
             'refresh' => true
         ]);
+
+        if (Arr::get($response, 'errors') !== true) return true;
+
+        $items = Arr::get($response, 'items');
+
+        $error = Arr::get(Arr::first($items), 'index.error.reason');
+
+        throw new SeedingException(
+            "Failed to seed: $error",
+            $items
+        );
     }
 }

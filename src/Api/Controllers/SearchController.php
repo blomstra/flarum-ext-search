@@ -17,8 +17,6 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Psr\Http\Message\ServerRequestInterface;
-use Spatie\ElasticsearchQueryBuilder\Aggregations\TermsAggregation;
-use Spatie\ElasticsearchQueryBuilder\Aggregations\TopHitsAggregation;
 use Spatie\ElasticsearchQueryBuilder\Builder;
 use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\MatchQuery;
@@ -59,12 +57,7 @@ class SearchController extends ListDiscussionsController
             ->from($this->extractOffset($request))
             ->addQuery(
                 $this->addFilters($filterQuery, $actor)
-            )
-//            ->addAggregation(
-//                TermsAggregation::create('discussions', 'discussion_id')
-//                    ->aggregation(TopHitsAggregation::create('hits', 1))
-//            )
-        ;
+            );
 
         foreach ($this->extractSort($request) as $field => $direction) {
             $field = $this->translateSort[$field] ?? $field;

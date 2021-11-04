@@ -62,7 +62,7 @@ class DiscussionSeeder extends Seeder
         }
 
         if ($this->extensionEnabled('flarum-sticky')) {
-            $document['is_sticky'] = $model->is_sticky;
+            $document['is_sticky'] = (bool) $model->is_sticky;
         }
 
         return $document;
