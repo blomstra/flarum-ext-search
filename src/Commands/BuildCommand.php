@@ -15,7 +15,8 @@ use Illuminate\Database\Eloquent\Collection;
 class BuildCommand extends Command
 {
     protected $signature = 'blomstra:search:index
-        {--max-id= : Limits for each object the number of items to seed}';
+        {--max-id= : Limits for each object the number of items to seed}
+        {--chunk-size= : Size of the chunks to dispatch into jobs}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
     public function handle(Container $container)
@@ -80,7 +81,7 @@ class BuildCommand extends Command
                 ->when($this->option('max-id'), function ($query, $id) {
                     $query->where('id', '<=', $id);
                 })
-                ->chunk(50, function (Collection $collection) use ($queue, &$total, $seeder) {
+                ->chunk($this->option('chunk-size') ?? 1000, function (Collection $collection) use ($queue, &$total, $seeder) {
                     $queue->pushOn(Job::$onQueue, new SavingJob($collection, $seeder));
 
                     $this->info("Pushed into the index, type: {$seeder->type()}, amount: {$collection->count()}.");
