@@ -16,7 +16,8 @@ class BuildCommand extends Command
 {
     protected $signature = 'blomstra:search:index
         {--max-id= : Limits for each object the number of items to seed}
-        {--chunk-size= : Size of the chunks to dispatch into jobs}';
+        {--chunk-size= : Size of the chunks to dispatch into jobs}
+        {--throttle= : Number of seconds to wait between pushing to the queue}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
     public function handle(Container $container)
@@ -81,6 +82,7 @@ class BuildCommand extends Command
                 ->when($this->option('max-id'), function ($query, $id) {
                     $query->where('id', '<=', $id);
                 })
+                ->latest('created_at')
                 ->chunk($this->option('chunk-size') ?? 1000, function (Collection $collection) use ($queue, &$total, $seeder) {
                     $queue->pushOn(Job::$onQueue, new SavingJob($collection, $seeder));
 
@@ -90,6 +92,11 @@ class BuildCommand extends Command
                 });
 
             $this->info("Pushed a total of $total into the index.");
+
+            if ($throttle = $this->option('throttle')) {
+                $this->info("Throttling for $throttle seconds");
+                sleep($throttle);
+            }
         }
     }
 }
