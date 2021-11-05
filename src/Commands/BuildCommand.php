@@ -17,7 +17,9 @@ class BuildCommand extends Command
     protected $signature = 'blomstra:search:index
         {--max-id= : Limits for each object the number of items to seed}
         {--chunk-size= : Size of the chunks to dispatch into jobs}
-        {--throttle= : Number of seconds to wait between pushing to the queue}';
+        {--throttle= : Number of seconds to wait between pushing to the queue}
+        {--only= : type to run seeder for, eg discussions or posts}
+        {--recreate : create or recreate the index}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
     public function handle(Container $container)
@@ -49,35 +51,41 @@ class BuildCommand extends Command
             ]
         ];
 
-        // Flush the index.
-        $client->indices()->delete([
-            'index' => $index,
-            'ignore_unavailable' => true
-        ]);
+        if ($this->option('recreate')) {
+            // Flush the index.
+            $client->indices()->delete([
+                'index'              => $index,
+                'ignore_unavailable' => true
+            ]);
 
-        // Create a new index.
-        $client->indices()->create([
-            'index' => $index,
-            'body' => [
-                'settings' => [
-                    'analysis' => [
-                        'analyzer' => [
-                            'flarum_analyzer' => [
-                                'type' => $settings->get('blomstra-search.analyzer-language') ?: 'english'
+            // Create a new index.
+            $client->indices()->create([
+                'index' => $index,
+                'body'  => [
+                    'settings' => [
+                        'analysis' => [
+                            'analyzer' => [
+                                'flarum_analyzer' => [
+                                    'type' => $settings->get('blomstra-search.analyzer-language') ?: 'english'
+                                ]
                             ]
                         ]
                     ]
                 ]
-            ]
-        ]);
+            ]);
 
-        $client->indices()->putMapping([
-            'index' => $index,
-            'body' => $properties
-        ]);
+            $client->indices()->putMapping([
+                'index' => $index,
+                'body'  => $properties
+            ]);
+        }
+
+        $only = $this->option('only');
 
         /** @var Seeder $seeder */
         foreach ($seeders as $seeder) {
+            if ($only && $seeder->type() !== $only) continue;
+
             $seeder->query()
                 ->when($this->option('max-id'), function ($query, $id) {
                     $query->where('id', '<=', $id);
