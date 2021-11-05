@@ -22,7 +22,18 @@ class DiscussionSeeder extends Seeder
 
     public function query(): Builder
     {
-        return Discussion::query();
+        $includes = [];
+
+        if ($this->extensionEnabled('flarum-tags')) {
+            $includes[] = 'tags';
+        }
+
+        if ($this->extensionEnabled('fof-byobu')) {
+            $includes[] = 'recipientUsers';
+            $includes[] = 'recipientGroups';
+        }
+        return Discussion::query()
+            ->with($includes);
     }
 
     public static function savingOn(Dispatcher $events, callable $callable)

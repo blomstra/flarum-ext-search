@@ -20,9 +20,20 @@ class CommentSeeder extends Seeder
 
     public function query(): Builder
     {
+        $includes = ['discussion'];
+
+        if ($this->extensionEnabled('flarum-tags')) {
+            $includes[] = 'discussion.tags';
+        }
+
+        if ($this->extensionEnabled('fof-byobu')) {
+            $includes[] = 'discussion.recipientUsers';
+            $includes[] = 'discussion.recipientGroups';
+        }
+
         return CommentPost::query()
             ->where('type', CommentPost::$type)
-            ->with('discussion');
+            ->with($includes);
     }
 
     public static function savingOn(Dispatcher $events, callable $callable)
