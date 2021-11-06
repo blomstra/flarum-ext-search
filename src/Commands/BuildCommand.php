@@ -5,6 +5,7 @@ namespace Blomstra\Search\Commands;
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders\Seeder;
+use Carbon\Carbon;
 use Elasticsearch\Client;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Console\Command;
@@ -19,7 +20,8 @@ class BuildCommand extends Command
         {--chunk-size= : Size of the chunks to dispatch into jobs}
         {--throttle= : Number of seconds to wait between pushing to the queue}
         {--only= : type to run seeder for, eg discussions or posts}
-        {--recreate : create or recreate the index}';
+        {--recreate : create or recreate the index}
+        {--continue : continue each object type where you left off}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
     public function handle(Container $container)
@@ -90,13 +92,23 @@ class BuildCommand extends Command
                 ->when($this->option('max-id'), function ($query, $id) {
                     $query->where('id', '<=', $id);
                 })
-                ->latest('created_at')
+                ->when($this->option('continue'), function ($query) use ($seeder) {
+                    if ($continueAt = $this->continueAt($seeder->type())) {
+                        $query->where('id', '<=', $continueAt);
+                    }
+                })
+                ->latest('id')
                 ->chunk($this->option('chunk-size') ?? 1000, function (Collection $collection) use ($queue, &$total, $seeder) {
                     $queue->pushOn(Job::$onQueue, new SavingJob($collection, $seeder));
 
                     $this->info("Pushed into the index, type: {$seeder->type()}, amount: {$collection->count()}.");
 
                     $total += $collection->count();
+
+                    $this->continueAt(
+                        $seeder->type(),
+                        $collection->min('id')
+                    );
                 });
 
             $this->info("Pushed a total of $total into the index.");
@@ -105,6 +117,20 @@ class BuildCommand extends Command
                 $this->info("Throttling for $throttle seconds");
                 sleep($throttle);
             }
+        }
+    }
+
+    protected function continueAt(string $type, int $at = null)
+    {
+        /** @var SettingsRepositoryInterface $settings */
+        $settings = resolve(SettingsRepositoryInterface::class);
+
+        $key = "blomstra-search.continued-at.$type";
+
+        if ($at) {
+            $settings->set($key, $at);
+        } else {
+            return $settings->get($key);
         }
     }
 }
