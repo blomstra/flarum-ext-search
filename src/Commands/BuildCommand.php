@@ -88,35 +88,43 @@ class BuildCommand extends Command
         foreach ($seeders as $seeder) {
             if ($only && $seeder->type() !== $only) continue;
 
-            $seeder->query()
-                ->when($this->option('max-id'), function ($query, $id) {
-                    $query->where('id', '<=', $id);
-                })
-                ->when($this->option('continue'), function ($query) use ($seeder) {
-                    if ($continueAt = $this->continueAt($seeder->type())) {
-                        $query->where('id', '<=', $continueAt);
-                    }
-                })
-                ->latest('id')
-                ->chunk($this->option('chunk-size') ?? 1000, function (Collection $collection) use ($queue, &$total, $seeder) {
-                    $queue->pushOn(Job::$onQueue, new SavingJob($collection, $seeder));
+            $total = 0;
 
-                    $this->info("Pushed into the index, type: {$seeder->type()}, amount: {$collection->count()}.");
+            $continueAt = $this->option('continue')
+                ? ($this->continueAt($seeder->type()) ?? $seeder->query()->max('id'))
+                : $seeder->query()->max('id');
 
-                    $total += $collection->count();
+            while($continueAt !== null) {
+                /** @var Collection $collection */
+                $collection = $seeder->query()
+                    ->latest('id')
+                    ->whereBetween('id', [$continueAt - 1000, $continueAt])
+                    ->when($this->option('max-id'), function ($query, $id) {
+                        $query->where('id', '<=', $id);
+                    })
+                    ->get();
 
-                    $this->continueAt(
-                        $seeder->type(),
-                        $collection->min('id')
-                    );
-                });
+                $min = $collection->min('id');
+                $continueAt = $min && $min > 2 ? $min - 1 : null;
+
+                $queue->pushOn(Job::$onQueue, new SavingJob($collection, $seeder));
+
+                $this->info("Pushed into the index, type: {$seeder->type()}, amount: {$collection->count()}.");
+
+                $total += $collection->count();
+
+                $this->continueAt(
+                    $seeder->type(),
+                    $continueAt
+                );
+
+                if ($throttle = $this->option('throttle')) {
+                    $this->info("Throttling for $throttle seconds");
+                    sleep($throttle);
+                }
+            }
 
             $this->info("Pushed a total of $total into the index.");
-
-            if ($throttle = $this->option('throttle')) {
-                $this->info("Throttling for $throttle seconds");
-                sleep($throttle);
-            }
         }
     }
 
