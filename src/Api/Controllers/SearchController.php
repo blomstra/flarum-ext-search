@@ -83,8 +83,8 @@ class SearchController extends ListDiscussionsController
         // their ids as most relevant post id
         $results = Collection::make(Arr::get($response, 'hits.hits'))
             ->map(function ($hit) {
-                $id = Str::after($hit['_source']['id'], ':');
                 $type = $hit['_source']['type'];
+                $id = Str::after($hit['_source']['id'], "$type:");
 
                 if ($type === 'posts') {
                     return [
@@ -92,12 +92,13 @@ class SearchController extends ListDiscussionsController
                     ];
                 } else {
                     return [
-                        'discussion_id' => $id
+                        'discussion_id' => $id,
                     ];
                 }
             });
 
         $discussions = Discussion::query()
+            ->select('discussions.*')
             ->join('posts', 'posts.discussion_id', 'discussions.id')
             ->whereIn('discussions.id', $results->pluck('discussion_id')->filter())
             ->orWhereIn('posts.id', $results->pluck('most_relevant_post_id')->filter())
