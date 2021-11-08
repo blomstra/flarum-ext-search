@@ -98,10 +98,9 @@ class SearchController extends ListDiscussionsController
             });
 
         $discussions = Discussion::query()
-            ->whereIn('id', $results->pluck('discussion_id')->filter())
-            ->orWhereHas('posts', function ($query) use ($results) {
-                $query->whereIn('id', $results->pluck('most_relevant_post_id'));
-            })
+            ->join('posts', 'posts.discussion_id', 'discussions.id')
+            ->whereIn('discussions.id', $results->pluck('discussion_id')->filter())
+            ->orWhereIn('posts.id', $results->pluck('most_relevant_post_id')->filter())
             ->get()
             ->each(function (Discussion $discussion) use ($results) {
                 if (in_array($discussion->id, $results->pluck('discussion_id')->toArray())) {
