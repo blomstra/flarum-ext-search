@@ -32,6 +32,7 @@ class CommentSeeder extends Seeder
         }
 
         return CommentPost::query()
+            ->whereNull('hidden_at')
             ->where('type', CommentPost::$type)
             ->with($includes);
     }

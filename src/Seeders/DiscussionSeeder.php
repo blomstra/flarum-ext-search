@@ -33,6 +33,7 @@ class DiscussionSeeder extends Seeder
             $includes[] = 'recipientGroups';
         }
         return Discussion::query()
+            ->whereNull('hidden_at')
             ->with($includes);
     }
 
