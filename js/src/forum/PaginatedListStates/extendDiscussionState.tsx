@@ -6,7 +6,7 @@ import DiscussionListState from 'flarum/forum/states/DiscussionListState';
 
 export default function extendDiscussionState() {
     override(DiscussionListState.prototype, 'loadPage', async function (this: DiscussionListState, original, page: number = 1) {
-        const preloaded = app.preloadedApiDocument() || null;
+        const preloaded = app.data.apiDocument || null;
 
         if (preloaded || !this.requestParams()?.filter?.q) return original.call(this, page);
 
