@@ -2,6 +2,8 @@
 
 namespace Blomstra\Search\Api\Controllers;
 
+use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
+use Blomstra\Search\Elasticsearch\MatchQuery;
 use Blomstra\Search\Save\Document as ElasticDocument;
 use Blomstra\Search\Elasticsearch\TermsQuery;
 use Elasticsearch\Client;
@@ -19,7 +21,7 @@ use Illuminate\Support\Str;
 use Psr\Http\Message\ServerRequestInterface;
 use Spatie\ElasticsearchQueryBuilder\Builder;
 use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
-use Spatie\ElasticsearchQueryBuilder\Queries\MatchQuery;
+use Spatie\ElasticsearchQueryBuilder\Queries\Query;
 use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 use Spatie\ElasticsearchQueryBuilder\Sorts\Sort;
 use Tobscure\JsonApi\Document;
@@ -38,6 +40,7 @@ class SearchController extends ListDiscussionsController
 
     protected function data(ServerRequestInterface $request, Document $document)
     {
+        // Not used for now.
         $type = Arr::get($request->getQueryParams(), 'type');
 
         $actor = RequestUtil::getActor($request);
@@ -47,10 +50,10 @@ class SearchController extends ListDiscussionsController
         $include = array_merge($this->extractInclude($request), ['state']);
 
         $filterQuery = (BoolQuery::create())
-            ->add(
-                BoolQuery::create()
-                    ->add(MatchQuery::create('content', $filters['q']))
-            );
+            ->add($this->sentenceMatch($filters))
+            ->add($this->wordMatch($filters))
+        ;
+
         $builder = (new Builder($this->elastic))
             ->index(resolve('blomstra.search.elastic_index'))
             ->size($this->extractLimit($request))
@@ -180,5 +183,15 @@ class SearchController extends ListDiscussionsController
         );
 
         return $query;
+    }
+
+    protected function sentenceMatch(array $filters): Query
+    {
+        return new MatchPhraseQuery('content', $filters['q']);
+    }
+
+    protected function wordMatch(array $filters)
+    {
+        return (new MatchQuery('content', $filters['q']))->boost(.3);
     }
 }
