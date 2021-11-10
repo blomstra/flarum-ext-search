@@ -2,6 +2,15 @@
 
 namespace Blomstra\Search\Api;
 
-class Client
+use Illuminate\Support\Arr;
+use Psr\Http\Message\ResponseInterface;
+
+class Client extends \Flarum\Api\Client
 {
+    public function get(string $path): ResponseInterface
+    {
+        if ($path === '/discussions' && Arr::has($this->queryParams, 'filter.q')) return parent::get("/blomstra$path");
+
+        return parent::get($path);
+    }
 }

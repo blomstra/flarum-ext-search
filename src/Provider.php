@@ -6,14 +6,17 @@ use Blomstra\Search\Jobs\DeletingJob;
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders;
-use Elasticsearch\Client;
+use Elasticsearch\Client as Elastic;
 use Elasticsearch\ClientBuilder;
+use Flarum\Api\Client;
 use Flarum\Foundation\AbstractServiceProvider;
+use Flarum\Http\Middleware\ExecuteRoute;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Support\Collection;
+use Laminas\Stratigility\MiddlewarePipe;
 use Psr\Log\LoggerInterface;
 
 class Provider extends AbstractServiceProvider
@@ -28,7 +31,7 @@ class Provider extends AbstractServiceProvider
         /** @var SettingsRepositoryInterface $settings */
         $settings = $this->container->make(SettingsRepositoryInterface::class);
 
-        $this->container->singleton(Client::class, function (Container $container) use ($settings) {
+        $this->container->singleton(Elastic::class, function (Container $container) use ($settings) {
             $builder = ClientBuilder::create()
                 ->setHosts([$settings->get('blomstra-search.elastic-endpoint')])
                 ->setLogger($container->make(LoggerInterface::class));
@@ -47,6 +50,27 @@ class Provider extends AbstractServiceProvider
         $this->container->instance(
             'blomstra.search.elastic_index',
             $settings->get('blomstra-search.elastic-index', 'flarum')
+        );
+
+        $this->container->extend(
+            Client::class,
+            function () {
+                $pipe = new MiddlewarePipe;
+
+                $exclude = resolve('flarum.api_client.exclude_middleware');
+
+                $middlewareStack = array_filter(resolve('flarum.api.middleware'), function ($middlewareClass) use ($exclude) {
+                    return ! in_array($middlewareClass, $exclude);
+                });
+
+                foreach ($middlewareStack as $middleware) {
+                    $pipe->pipe(resolve($middleware));
+                }
+
+                $pipe->pipe(new ExecuteRoute);
+
+                return new Api\Client($pipe);
+            }
         );
     }
 
