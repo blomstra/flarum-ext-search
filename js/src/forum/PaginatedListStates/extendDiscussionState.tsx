@@ -6,8 +6,6 @@ import DiscussionListState from 'flarum/forum/states/DiscussionListState';
 
 export default function extendDiscussionState() {
   override(DiscussionListState.prototype, 'loadPage', async function (this: DiscussionListState, original, page: number = 1) {
-    console.log(this.requestParams());
-
     if (!this.requestParams()?.filter?.q) return original.call(this, page);
 
     const params = this.requestParams();
@@ -27,8 +25,6 @@ export default function extendDiscussionState() {
     const results = await app.request({ params, url, method: 'GET' });
 
     // Parse API response into models and push to store
-    const models = app.store.pushPayload(results);
-
-    return models;
+    return app.store.pushPayload(results);
   });
 }
