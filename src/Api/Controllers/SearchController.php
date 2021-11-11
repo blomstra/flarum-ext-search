@@ -32,7 +32,8 @@ class SearchController extends ListDiscussionsController
 
     protected array $translateSort = [
         'lastPostedAt' => 'updated_at',
-        'createdAt' => 'created_at'
+        'createdAt' => 'created_at',
+        'commentCount' => 'comment_count'
     ];
 
     public function __construct(protected Client $elastic)

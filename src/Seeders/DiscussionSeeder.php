@@ -65,7 +65,8 @@ class DiscussionSeeder extends Seeder
             'updated_at' => $model->last_posted_at?->toAtomString(),
             'is_private' => $model->is_private,
             'user_id' => $model->user_id,
-            'groups' => $this->groupsForDiscussion($model)
+            'groups' => $this->groupsForDiscussion($model),
+            'comment_count' => $model->comment_count,
         ]);
 
         if ($this->extensionEnabled('fof-byobu')) {

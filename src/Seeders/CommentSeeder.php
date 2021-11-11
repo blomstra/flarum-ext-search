@@ -65,7 +65,8 @@ class CommentSeeder extends Seeder
             'updated_at' => $model->edited_at?->toAtomString(),
             'is_private' => $model->is_private,
             'user_id' => $model->user_id,
-            'groups' => $this->groupsForDiscussion($model->discussion)
+            'groups' => $this->groupsForDiscussion($model->discussion),
+            'comment_count' => $model->discussion->comment_count,
         ]);
 
         if ($this->extensionEnabled('fof-byobu')) {
