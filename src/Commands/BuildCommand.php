@@ -50,6 +50,7 @@ class BuildCommand extends Command
                 'groups' => ['type' => 'integer'],
                 'recipient_groups' => ['type' => 'integer'],
                 'recipient_users' => ['type' => 'integer'],
+                'comment_count' => ['type' => 'integer'],
             ]
         ];
 
