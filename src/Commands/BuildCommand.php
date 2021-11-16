@@ -21,6 +21,7 @@ class BuildCommand extends Command
         {--throttle= : Number of seconds to wait between pushing to the queue}
         {--only= : type to run seeder for, eg discussions or posts}
         {--recreate : create or recreate the index}
+        {--mapping : recreate the mapping}
         {--continue : continue each object type where you left off}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
@@ -76,7 +77,9 @@ class BuildCommand extends Command
                     ]
                 ]
             ]);
+        }
 
+        if ($this->option('recreate') || $this->option('mapping')) {
             $client->indices()->putMapping([
                 'index' => $index,
                 'body'  => $properties
