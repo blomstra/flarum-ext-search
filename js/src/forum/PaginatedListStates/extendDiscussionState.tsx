@@ -8,8 +8,6 @@ export default function extendDiscussionState() {
     override(DiscussionListState.prototype, 'loadPage', async function (this: DiscussionListState, original, page: number = 1) {
         const preloaded = app.data.apiDocument || null;
 
-        // If this is not the usual index, make sure to fallback to the native page (eg for byobu).
-        if (app.current.get('routeName') !== 'index') return original.call(this, page);
         // If existing payload is given or no search is made, fallback on native page.
         if (preloaded || !this.requestParams()?.filter?.q) return original.call(this, page);
 

@@ -15,8 +15,8 @@ use Flarum\Group\Group;
 use Flarum\Http\RequestUtil;
 use Flarum\User\User;
 use Illuminate\Contracts\Container\Container;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Psr\Http\Message\ServerRequestInterface;
 use Spatie\ElasticsearchQueryBuilder\Builder;
@@ -48,19 +48,24 @@ class SearchController extends ListDiscussionsController
 
         $filters = $this->extractFilter($request);
 
+        $search = $this->getSearch($filters);
+
         $include = array_merge($this->extractInclude($request), ['state']);
 
-        $filterQuery = (BoolQuery::create())
-            ->add($this->sentenceMatch($filters))
-            ->add($this->wordMatch($filters))
-        ;
+        $filterQuery = BoolQuery::create();
+
+        if (! empty($search)) {
+            $filterQuery
+                ->add($this->sentenceMatch($search))
+                ->add($this->wordMatch($search));
+        }
 
         $builder = (new Builder($this->elastic))
             ->index(resolve('blomstra.search.elastic_index'))
             ->size($this->extractLimit($request))
             ->from($this->extractOffset($request))
             ->addQuery(
-                $this->addFilters($filterQuery, $actor)
+                $this->addFilters($filterQuery, $actor, $filters)
             );
 
         foreach ($this->extractSort($request) as $field => $direction) {
@@ -150,14 +155,11 @@ class SearchController extends ListDiscussionsController
         return $manager->isEnabled($extension);
     }
 
-    protected function addFilters(BoolQuery $query, User $actor): BoolQuery
+    protected function addFilters(BoolQuery $query, User $actor, array $filters = []): BoolQuery
     {
-        /** @var Collection $groups */
-        $groups = $actor->groups->pluck('id');
+        $groups = $this->getGroups($actor);
 
-        $groups->add(Group::GUEST_ID);
-
-        if ($actor->is_email_confirmed) $groups->add(Group::MEMBER_ID);
+        $onlyPrivate = Str::contains($filters['q'] ?? '', 'is:private');
 
         $subQuery = BoolQuery::create()
             ->add(TermQuery::create('is_private', 'false'))
@@ -165,17 +167,20 @@ class SearchController extends ListDiscussionsController
 
         if ($this->extensionEnabled('fof-byobu') && $actor->exists) {
             $byobuQuery = BoolQuery::create()
-                ->add(TermQuery::create('is_private', 'true'), 'should')
+                ->add(TermQuery::create('is_private', 'true'))
                 ->add(
                     BoolQuery::create()
-                        ->add(TermsQuery::create('recipient-groups', $groups->toArray()))
-                        ->add(TermQuery::create('recipient-users', $actor->id)),
-                    'should'
+                        ->add(TermsQuery::create('recipient-groups', $groups->toArray()), 'should')
+                        ->add(TermsQuery::create('recipient-users', [$actor->id]), 'should'),
                 );
 
-            $subQuery = BoolQuery::create()
-                ->add($subQuery, 'should')
-                ->add($byobuQuery, 'should');
+            if ($onlyPrivate) {
+                $subQuery = $byobuQuery;
+            } else {
+                $subQuery = BoolQuery::create()
+                    ->add($subQuery, 'should')
+                    ->add($byobuQuery, 'should');
+            }
         }
 
         $query->add(
@@ -186,13 +191,46 @@ class SearchController extends ListDiscussionsController
         return $query;
     }
 
-    protected function sentenceMatch(array $filters): Query
+    protected function sentenceMatch(string $q): Query
     {
-        return new MatchPhraseQuery('content', $filters['q']);
+        return new MatchPhraseQuery('content', $q);
     }
 
-    protected function wordMatch(array $filters)
+    protected function wordMatch(string $q)
     {
-        return (new MatchQuery('content', $filters['q']))->boost(.3);
+        return (new MatchQuery('content', $q))->boost(.3);
+    }
+
+
+    protected function getGroups(User $actor): Collection
+    {
+        /** @var Collection $groups */
+        $groups = $actor->groups->pluck('id');
+
+        $groups->add(Group::GUEST_ID);
+
+        if ($actor->is_email_confirmed) {
+            $groups->add(Group::MEMBER_ID);
+        }
+
+        return $groups;
+    }
+
+    protected function getSearch(array $filters): ?string
+    {
+        $search = Arr::get($filters, 'q');
+
+        if ($search) {
+            $q = collect(explode(' ', $search))
+                ->filter(function (string $part) {
+                    return $part !== 'is:private';
+                })
+                ->filter()
+                ->join(' ');
+
+            return empty($q) ? null : $q;
+        }
+
+        return null;
     }
 }
