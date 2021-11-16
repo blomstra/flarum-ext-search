@@ -170,8 +170,8 @@ class SearchController extends ListDiscussionsController
                 ->add(TermQuery::create('is_private', 'true'))
                 ->add(
                     BoolQuery::create()
-                        ->add(TermsQuery::create('recipient-groups', $groups->toArray()), 'should')
-                        ->add(TermsQuery::create('recipient-users', [$actor->id]), 'should'),
+                        ->add(TermsQuery::create('recipient_groups', $groups->toArray()), 'should')
+                        ->add(TermsQuery::create('recipient_users', [$actor->id]), 'should'),
                 );
 
             if ($onlyPrivate) {
