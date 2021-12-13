@@ -41,4 +41,10 @@ app.initializers.add('blomstra-search', () => {
             options: Object.fromEntries(languages.entries()),
             default: 'english',
         })
+        .registerSetting({
+            setting: 'blomstra-search.elastic-index',
+            label: app.translator.trans('blomstra-search.admin.elastic-index'),
+            default: 'flarum',
+            type: 'input'
+        })
 });

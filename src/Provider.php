@@ -10,6 +10,7 @@ use Elasticsearch\Client as Elastic;
 use Elasticsearch\ClientBuilder;
 use Flarum\Api\Client;
 use Flarum\Foundation\AbstractServiceProvider;
+use Flarum\Foundation\Config;
 use Flarum\Http\Middleware\ExecuteRoute;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Contracts\Container\Container;
@@ -31,10 +32,16 @@ class Provider extends AbstractServiceProvider
         /** @var SettingsRepositoryInterface $settings */
         $settings = $this->container->make(SettingsRepositoryInterface::class);
 
-        $this->container->singleton(Elastic::class, function (Container $container) use ($settings) {
+        /** @var Config $config */
+        $config = $this->container->make(Config::class);
+
+        $this->container->singleton(Elastic::class, function (Container $container) use ($settings, $config) {
             $builder = ClientBuilder::create()
-                ->setHosts([$settings->get('blomstra-search.elastic-endpoint')])
-                ->setLogger($container->make(LoggerInterface::class));
+                ->setHosts([$settings->get('blomstra-search.elastic-endpoint')]);
+
+            if ($config->inDebugMode()) {
+                $builder->setLogger($container->make(LoggerInterface::class));
+            }
 
             if ($settings->get('blomstra-search.elastic-username')) {
                 $builder->setBasicAuthentication(
