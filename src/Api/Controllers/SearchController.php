@@ -57,7 +57,8 @@ class SearchController extends ListDiscussionsController
         if (! empty($search)) {
             $filterQuery
                 ->add($this->sentenceMatch($search))
-                ->add($this->wordMatch($search));
+                ->add($this->wordMatch($search))
+                ->add($this->partialMatch($search));
         }
 
         $builder = (new Builder($this->elastic))
@@ -198,9 +199,13 @@ class SearchController extends ListDiscussionsController
 
     protected function wordMatch(string $q)
     {
-        return (new MatchQuery('content', $q))->boost(.3);
+        return (new MatchQuery('content', $q))->boost(.5);
     }
 
+    protected function partialMatch(string $q)
+    {
+        return (new MatchQuery('content', "*$q*"))->boost(.2);
+    }
 
     protected function getGroups(User $actor): Collection
     {
