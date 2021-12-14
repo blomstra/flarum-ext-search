@@ -4,6 +4,7 @@ namespace Blomstra\Search\Api\Controllers;
 
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
+use Blomstra\Search\Elasticsearch\WildcardQuery;
 use Blomstra\Search\Save\Document as ElasticDocument;
 use Blomstra\Search\Elasticsearch\TermsQuery;
 use Elasticsearch\Client;
@@ -204,7 +205,10 @@ class SearchController extends ListDiscussionsController
 
     protected function partialMatch(string $q)
     {
-        return (new MatchQuery('content', "*$q*"))->boost(.2);
+        return (new WildcardQuery('content', "*$q*"))
+            ->caseSensitivity(false)
+            ->rewrite('constant_score_boolean')
+            ->boost(.2);
     }
 
     protected function getGroups(User $actor): Collection
