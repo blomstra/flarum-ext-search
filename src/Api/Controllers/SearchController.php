@@ -57,9 +57,9 @@ class SearchController extends ListDiscussionsController
 
         if (! empty($search)) {
             $filterQuery
-                ->add($this->sentenceMatch($search))
-                ->add($this->wordMatch($search))
-                ->add($this->partialMatch($search));
+                ->add($this->sentenceMatch($search), 'should')
+                ->add($this->wordMatch($search), 'should')
+                ->add($this->partialMatch($search), 'should');
         }
 
         $builder = (new Builder($this->elastic))
