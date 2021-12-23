@@ -2,7 +2,6 @@
 
 namespace Blomstra\Search\Api\Controllers;
 
-use Blomstra\Search\Elasticsearch\BoolQuery;
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
 use Blomstra\Search\Elasticsearch\WildcardQuery;
@@ -22,6 +21,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Psr\Http\Message\ServerRequestInterface;
 use Spatie\ElasticsearchQueryBuilder\Builder;
+use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\Query;
 use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 use Spatie\ElasticsearchQueryBuilder\Sorts\Sort;
