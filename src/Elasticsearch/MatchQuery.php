@@ -6,6 +6,7 @@ class MatchQuery extends \Spatie\ElasticsearchQueryBuilder\Queries\MatchQuery
 {
     protected string $operator = 'or';
     protected float $boost = 1;
+    protected ?string $analyzer = null;
 
     public function and()
     {
@@ -17,6 +18,13 @@ class MatchQuery extends \Spatie\ElasticsearchQueryBuilder\Queries\MatchQuery
     public function boost(float $boost = 1)
     {
         $this->boost = $boost;
+
+        return $this;
+    }
+
+    public function analyzer(string $analyzer)
+    {
+        $this->analyzer = $analyzer;
 
         return $this;
     }

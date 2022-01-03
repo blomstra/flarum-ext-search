@@ -44,6 +44,7 @@ class BuildCommand extends Command
         $properties = [
             'properties' => [
                 'content' => ['type' => 'text', 'analyzer' => 'flarum_analyzer'],
+                'content_partial' => ['type' => 'text', 'analyzer' => 'flarum_analyzer_partial', 'search_analyzer' => 'flarum_analyzer'],
                 'created_at' => ['type' => 'date'],
                 'updated_at' => ['type' => 'date'],
                 'is_private' => ['type' => 'boolean'],
@@ -67,10 +68,27 @@ class BuildCommand extends Command
                 'index' => $index,
                 'body'  => [
                     'settings' => [
+                        'index.max_ngram_diff' => 10,
                         'analysis' => [
                             'analyzer' => [
                                 'flarum_analyzer' => [
                                     'type' => $settings->get('blomstra-search.analyzer-language') ?: 'english'
+                                ],
+                                'flarum_analyzer_partial' => [
+                                    'type' => 'custom',
+                                    'tokenizer' => 'standard',
+                                    'filter' => [
+                                        'lowercase',
+                                        'partial_search_filter'
+                                    ]
+                                ]
+                            ],
+                            'filter' => [
+                                'partial_search_filter' => [
+                                    'type' => 'ngram',
+                                    'min_gram' => 1,
+                                    'max_gram' => 10,
+                                    'token_chars' => ['letter', 'digit', 'symbol']
                                 ]
                             ]
                         ]

@@ -7,6 +7,7 @@ use Spatie\ElasticsearchQueryBuilder\Queries\Query;
 class SimpleSearchQuery implements Query
 {
     protected float $boost = 1;
+    protected ?string $analyzer = null;
 
     public static function create(array $field, string $value)
     {
@@ -16,6 +17,13 @@ class SimpleSearchQuery implements Query
     public function boost(float $boost = 1)
     {
         $this->boost = $boost;
+
+        return $this;
+    }
+
+    public function analyzer(string $analyzer)
+    {
+        $this->analyzer = $analyzer;
 
         return $this;
     }
@@ -32,6 +40,8 @@ class SimpleSearchQuery implements Query
             'simple_query_string' => [
                 'query' => $this->value,
                 'fields' => $this->fields,
+                'analyzer' => $this->analyzer,
+                'default_operator' => 'AND',
                 'boost' => $this->boost
             ]
         ];

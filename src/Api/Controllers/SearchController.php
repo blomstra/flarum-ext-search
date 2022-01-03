@@ -60,7 +60,7 @@ class SearchController extends ListDiscussionsController
             $filterQuery
                 ->add($this->sentenceMatch($search))
                 ->add($this->wordMatch($search))
-//                ->add($this->partialMatch($search))
+                ->add($this->partialMatch($search))
             ;
         }
 
@@ -240,9 +240,7 @@ class SearchController extends ListDiscussionsController
 
     protected function partialMatch(string $q)
     {
-        $wildcard = (new WildcardQuery('content', "*$q*"))
-            ->caseSensitivity(false)
-            ->rewrite('constant_score');
+        $wildcard = (new MatchQuery('content_partial', $q));
 
         return BoolQuery::create()
             // Discussion titles
@@ -256,7 +254,7 @@ class SearchController extends ListDiscussionsController
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add($wildcard->boost(.5)),
+                    ->add($wildcard->boost(.2)),
                 'should'
             );
     }
