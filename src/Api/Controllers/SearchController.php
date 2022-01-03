@@ -4,6 +4,8 @@ namespace Blomstra\Search\Api\Controllers;
 
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
+use Blomstra\Search\Elasticsearch\SimpleSearchQuery;
+use Blomstra\Search\Elasticsearch\WildcardQuery;
 use Blomstra\Search\Save\Document as ElasticDocument;
 use Blomstra\Search\Elasticsearch\TermsQuery;
 use Elasticsearch\Client;
@@ -57,7 +59,9 @@ class SearchController extends ListDiscussionsController
         if (! empty($search)) {
             $filterQuery
                 ->add($this->sentenceMatch($search))
-                ->add($this->wordMatch($search));
+                ->add($this->wordMatch($search))
+//                ->add($this->partialMatch($search))
+            ;
         }
 
         $builder = (new Builder($this->elastic))
@@ -98,10 +102,12 @@ class SearchController extends ListDiscussionsController
                 if ($type === 'posts') {
                     return [
                         'most_relevant_post_id' => $id,
+                        'weight' => Arr::get($hit, 'sort.0')
                     ];
                 } else {
                     return [
                         'discussion_id' => $id,
+                        'weight' => Arr::get($hit, 'sort.0')
                     ];
                 }
             });
@@ -115,12 +121,15 @@ class SearchController extends ListDiscussionsController
             ->each(function (Discussion $discussion) use ($results) {
                 if (in_array($discussion->id, $results->pluck('discussion_id')->toArray())) {
                     $discussion->most_relevant_post_id = $discussion->first_post_id;
+                    $discussion->weight = $results->firstWhere('discussion_id', $discussion->id)['weight'] ?? 0;
                 } else {
                     $post = $discussion->posts()->whereIn('id', $results->pluck('most_relevant_post_id'))->first();
                     $discussion->most_relevant_post_id = $post?->id ?? $discussion->first_post_id;
+                    $discussion->weight = $results->firstWhere('most_relevant_post_id', $post?->id)['weight'] ?? 0;
                 }
             })
             ->keyBy('id')
+            ->sortByDesc('weight')
             ->unique();
 
         $this->loadRelations($discussions, $include);
@@ -193,12 +202,63 @@ class SearchController extends ListDiscussionsController
 
     protected function sentenceMatch(string $q): Query
     {
-        return new MatchPhraseQuery('content', $q);
+        return BoolQuery::create()
+            // Discussion titles
+            ->add(
+                BoolQuery::create()
+                    ->add(TermQuery::create('type', 'discussions'), 'filter')
+                    ->add((new MatchPhraseQuery('content', $q))->boost(1)),
+                'should'
+            )
+            // Post bodies
+            ->add(
+                BoolQuery::create()
+                    ->add(TermQuery::create('type', 'posts'), 'filter')
+                    ->add((new MatchPhraseQuery('content', $q))->boost(.9)),
+                'should'
+            );
     }
 
     protected function wordMatch(string $q)
     {
-        return (new MatchQuery('content', $q))->boost(.3);
+        return BoolQuery::create()
+            // Discussion titles
+            ->add(
+                BoolQuery::create()
+                    ->add(TermQuery::create('type', 'discussions'), 'filter')
+                    ->add((new MatchQuery('content', $q))->boost(.6)),
+                'should'
+            )
+            // Post bodies
+            ->add(
+                BoolQuery::create()
+                    ->add(TermQuery::create('type', 'posts'), 'filter')
+                    ->add((new MatchQuery('content', $q))->boost(.5)),
+                'should'
+            );
+    }
+
+    protected function partialMatch(string $q)
+    {
+        $wildcard = (new WildcardQuery('content', "*$q*"))
+            ->caseSensitivity(false)
+            ->rewrite('constant_score');
+
+        return BoolQuery::create()
+            // Discussion titles
+            ->add(
+                BoolQuery::create()
+                    ->add(TermQuery::create('type', 'discussions'), 'filter')
+                    ->add($wildcard->boost(.3)),
+                'should'
+            )
+            // Post bodies
+            ->add(
+                BoolQuery::create()
+                    ->add(TermQuery::create('type', 'posts'), 'filter')
+                    ->add($wildcard->boost(.5)),
+                'should'
+            );
     }
 
 
