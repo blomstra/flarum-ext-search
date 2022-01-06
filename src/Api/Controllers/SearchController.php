@@ -4,8 +4,6 @@ namespace Blomstra\Search\Api\Controllers;
 
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
-use Blomstra\Search\Elasticsearch\SimpleSearchQuery;
-use Blomstra\Search\Elasticsearch\WildcardQuery;
 use Blomstra\Search\Save\Document as ElasticDocument;
 use Blomstra\Search\Elasticsearch\TermsQuery;
 use Elasticsearch\Client;
@@ -59,8 +57,9 @@ class SearchController extends ListDiscussionsController
         if (! empty($search)) {
             $filterQuery
                 ->add($this->sentenceMatch($search))
-                ->add($this->wordMatch($search))
-                ->add($this->partialMatch($search))
+                ->add($this->wordMatch($search, 'and'))
+                ->add($this->wordMatch($search, 'or'))
+//                ->add($this->partialMatch($search))
             ;
         }
 
@@ -202,59 +201,66 @@ class SearchController extends ListDiscussionsController
 
     protected function sentenceMatch(string $q): Query
     {
+        $query = (new MatchPhraseQuery('content', $q));
+
         return BoolQuery::create()
             // Discussion titles
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add((new MatchPhraseQuery('content', $q))->boost(1)),
+                    ->add($query->boost(1)),
                 'should'
             )
             // Post bodies
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add((new MatchPhraseQuery('content', $q))->boost(.9)),
+                    ->add($query->boost(.9)),
                 'should'
             );
     }
 
-    protected function wordMatch(string $q)
+    protected function wordMatch(string $q, string $operator = 'or')
     {
+        $query = (new MatchQuery('content', $q))
+            ->operator($operator);
+
+        $boost = $operator === 'and' ? 1 : .5;
+
         return BoolQuery::create()
             // Discussion titles
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add((new MatchQuery('content', $q))->boost(.6)),
+                    ->add($query->boost($boost * .6)),
                 'should'
             )
             // Post bodies
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add((new MatchQuery('content', $q))->boost(.5)),
+                    ->add($query->boost($boost * .5)),
                 'should'
             );
     }
 
     protected function partialMatch(string $q)
     {
-        $wildcard = (new MatchQuery('content_partial', $q));
+        $query = (new MatchQuery('content_partial', $q));
 
         return BoolQuery::create()
             // Discussion titles
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add($wildcard->boost(.3)),
+                    ->add($query->boost(.3)),
                 'should'
             )
             // Post bodies
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add($wildcard->boost(.2)),
+                    ->add($query->boost(.2)),
                 'should'
             );
     }
