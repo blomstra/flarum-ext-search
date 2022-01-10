@@ -56,6 +56,7 @@ class SearchController extends ListDiscussionsController
 
         if (! empty($search)) {
             $filterQuery
+                // @todo commented out to use only partial matching for now
 //                ->add($this->sentenceMatch($search))
 //                ->add($this->wordMatch($search, 'and'))
 //                ->add($this->wordMatch($search, 'or'))
@@ -246,7 +247,7 @@ class SearchController extends ListDiscussionsController
 
     protected function partialMatch(string $q)
     {
-        $query = (new MatchQuery('content_partial', $q));
+        $query = (new MatchQuery('content', $q));
 
         return BoolQuery::create()
             // Discussion titles

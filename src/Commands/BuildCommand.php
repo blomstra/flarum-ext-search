@@ -43,8 +43,7 @@ class BuildCommand extends Command
 
         $properties = [
             'properties' => [
-                'content' => ['type' => 'text', 'analyzer' => 'flarum_analyzer'],
-                'content_partial' => ['type' => 'text', 'analyzer' => 'flarum_analyzer_partial', 'search_analyzer' => 'flarum_analyzer'],
+                'content' => ['type' => 'text', 'analyzer' => 'flarum_analyzer_partial', 'search_analyzer' => 'flarum_analyzer'],
                 'created_at' => ['type' => 'date'],
                 'updated_at' => ['type' => 'date'],
                 'is_private' => ['type' => 'boolean'],
