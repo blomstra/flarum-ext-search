@@ -13,6 +13,7 @@ use Flarum\Discussion\Discussion;
 use Flarum\Extension\ExtensionManager;
 use Flarum\Group\Group;
 use Flarum\Http\RequestUtil;
+use Flarum\Http\UrlGenerator;
 use Flarum\User\User;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Arr;
@@ -36,7 +37,7 @@ class SearchController extends ListDiscussionsController
         'commentCount' => 'comment_count'
     ];
 
-    public function __construct(protected Client $elastic)
+    public function __construct(protected Client $elastic, protected UrlGenerator $uri)
     {}
 
     protected function data(ServerRequestInterface $request, Document $document)
@@ -49,6 +50,9 @@ class SearchController extends ListDiscussionsController
         $filters = $this->extractFilter($request);
 
         $search = $this->getSearch($filters);
+
+        $limit = $this->extractLimit($request);
+        $offset = $this->extractOffset($request);
 
         $include = array_merge($this->extractInclude($request), ['state']);
 
@@ -66,7 +70,7 @@ class SearchController extends ListDiscussionsController
 
         $builder = (new Builder($this->elastic))
             ->index(resolve('blomstra.search.elastic_index'))
-            ->size($this->extractLimit($request))
+            ->size($limit + 1)
             ->from($this->extractOffset($request))
             ->addQuery(
                 $this->addFilters($filterQuery, $actor, $filters)
@@ -111,6 +115,18 @@ class SearchController extends ListDiscussionsController
                     ];
                 }
             });
+
+        $document->addPaginationLinks(
+            $this->uri->to('api')->route('blomstra.search', [
+                'type' => 'discussions'
+            ]),
+            $request->getQueryParams(),
+            $offset,
+            $limit,
+            $results->count() > $limit ? null : 0
+        );
+
+        $results = $results->take($limit);
 
         $discussions = Discussion::query()
             ->select('discussions.*')
