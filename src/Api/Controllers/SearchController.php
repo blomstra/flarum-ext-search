@@ -249,14 +249,14 @@ class SearchController extends ListDiscussionsController
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add($query->boost($boost * .6)),
+                    ->add($query->boost($boost * 1.2)),
                 'should'
             )
             // Post bodies
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add($query->boost($boost * .5)),
+                    ->add($query->boost($boost * 1.1)),
                 'should'
             );
     }
@@ -270,14 +270,14 @@ class SearchController extends ListDiscussionsController
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add($query->boost(.3)),
+                    ->add(clone $query->boost(2)),
                 'should'
             )
             // Post bodies
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add($query->boost(.2)),
+                    ->add(clone $query->boost(1.3)),
                 'should'
             );
     }
