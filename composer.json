@@ -3,8 +3,12 @@
     "description": "Replaces Flarum search with one powered by an elastic search server.",
     "keywords": [
         "extension",
-        "flarum", "blomstra",
-        "search", "fulltext", "elastic", "elasticsearch"
+        "flarum",
+        "blomstra",
+        "search",
+        "fulltext",
+        "elastic",
+        "elasticsearch"
     ],
     "support": {
         "email": "helpdesk@blomstra.net",
@@ -14,9 +18,9 @@
     "license": "MIT",
     "authors": [
         {
-            "name": "Daniël Klabbers",
-            "email": "daniel@klabbers.email",
-            "homepage": "http://luceos.com"
+            "name": "Team Blomstra",
+            "email": "development@blomstra.net",
+            "role": "Developer"
         }
     ],
     "require": {
