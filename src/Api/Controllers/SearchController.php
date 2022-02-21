@@ -61,10 +61,10 @@ class SearchController extends ListDiscussionsController
         if (! empty($search)) {
             $filterQuery
                 // @todo commented out to use only partial matching for now
-//                ->add($this->sentenceMatch($search))
-//                ->add($this->wordMatch($search, 'and'))
-//                ->add($this->wordMatch($search, 'or'))
-                ->add($this->partialMatch($search))
+                ->add($this->sentenceMatch($search))
+                ->add($this->wordMatch($search, 'and'))
+                ->add($this->wordMatch($search, 'or'))
+//                ->add($this->partialMatch($search))
             ;
         }
 
@@ -225,14 +225,14 @@ class SearchController extends ListDiscussionsController
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add($query->boost(1)),
+                    ->add($query->boost(2)),
                 'should'
             )
             // Post bodies
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add($query->boost(.9)),
+                    ->add($query->boost(1.9)),
                 'should'
             );
     }
@@ -242,21 +242,21 @@ class SearchController extends ListDiscussionsController
         $query = (new MatchQuery('content', $q))
             ->operator($operator);
 
-        $boost = $operator === 'and' ? 1 : .5;
+        $boost = $operator === 'and' ? 1 : .8;
 
         return BoolQuery::create()
             // Discussion titles
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add($query->boost($boost * 1.2)),
+                    ->add($query->boost($boost * 1.8)),
                 'should'
             )
             // Post bodies
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add($query->boost($boost * 1.1)),
+                    ->add($query->boost($boost * 1.8)),
                 'should'
             );
     }
@@ -270,7 +270,7 @@ class SearchController extends ListDiscussionsController
             ->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add(clone $query->boost(2)),
+                    ->add(clone $query->boost(1.6)),
                 'should'
             )
             // Post bodies
