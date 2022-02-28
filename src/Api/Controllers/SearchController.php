@@ -136,7 +136,7 @@ class SearchController extends ListDiscussionsController
             ->where(function ($query) use ($results) {
                 $query
                     ->whereIn('discussions.id', $results->pluck('discussion_id')->filter())
-                    ->orWhereIn('posts.id', $results->pluck('most_relevant_post_id')->filter())
+                    ->orWhereIn('posts.id', $results->pluck('most_relevant_post_id')->filter());
             })
             ->get()
             ->each(function (Discussion $discussion) use ($results) {
