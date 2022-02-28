@@ -131,8 +131,13 @@ class SearchController extends ListDiscussionsController
         $discussions = Discussion::query()
             ->select('discussions.*')
             ->join('posts', 'posts.discussion_id', 'discussions.id')
-            ->whereIn('discussions.id', $results->pluck('discussion_id')->filter())
-            ->orWhereIn('posts.id', $results->pluck('most_relevant_post_id')->filter())
+            // Extra safety to prevent leaking hidden discussion (titles) towards search results.
+            ->when(! $actor->hasPermission('discussion.hide'), fn($query) => $query->whereNull('hidden_at'))
+            ->where(function ($query) use ($results) {
+                $query
+                    ->whereIn('discussions.id', $results->pluck('discussion_id')->filter())
+                    ->orWhereIn('posts.id', $results->pluck('most_relevant_post_id')->filter())
+            })
             ->get()
             ->each(function (Discussion $discussion) use ($results) {
                 if (in_array($discussion->id, $results->pluck('discussion_id')->toArray())) {
