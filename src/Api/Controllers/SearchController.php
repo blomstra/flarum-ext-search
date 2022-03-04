@@ -132,7 +132,7 @@ class SearchController extends ListDiscussionsController
             ->select('discussions.*')
             ->join('posts', 'posts.discussion_id', 'discussions.id')
             // Extra safety to prevent leaking hidden discussion (titles) towards search results.
-            ->when(! $actor->hasPermission('discussion.hide'), fn($query) => $query->whereNull('hidden_at'))
+            ->when($actor->isGuest() || ! $actor->hasPermission('discussion.hide'), fn($query) => $query->whereNull('discussions.hidden_at'))
             ->where(function ($query) use ($results) {
                 $query
                     ->whereIn('discussions.id', $results->pluck('discussion_id')->filter())
