@@ -1,33 +1,33 @@
 import app from 'flarum/forum/app';
 
-import {override} from 'flarum/common/extend';
+import { override } from 'flarum/common/extend';
 
 import DiscussionListState from 'flarum/forum/states/DiscussionListState';
 
 export default function extendDiscussionState() {
-    override(DiscussionListState.prototype, 'loadPage', async function (this: DiscussionListState, original, page: number = 1) {
-        const preloaded = app.data.apiDocument || null;
+  override(DiscussionListState.prototype, 'loadPage', async function (this: DiscussionListState, original, page: number = 1) {
+    const preloaded = app.data.apiDocument || null;
 
-        // If existing payload is given or no search is made, fallback on native page.
-        if (preloaded || !this.requestParams()?.filter?.q) return original.call(this, page);
+    // If existing payload is given or no search is made, fallback on native page.
+    if (preloaded || !this.requestParams()?.filter?.q) return original.call(this, page);
 
-        const params = this.requestParams();
-        params.page = {
-            offset: this.pageSize * (page - 1),
-            ...params.page,
-        };
+    const params = this.requestParams();
+    params.page = {
+      offset: this.pageSize * (page - 1),
+      ...params.page,
+    };
 
-        if (Array.isArray(params.include)) {
-            params.include = params.include.join(',');
-        }
+    if (Array.isArray(params.include)) {
+      params.include = params.include.join(',');
+    }
 
-        // Construct API search URI
-        const url = `${app.forum.attribute('apiUrl')}/blomstra/search/${this.type}`;
+    // Construct API search URI
+    const url = `${app.forum.attribute('apiUrl')}/blomstra/search/${this.type}`;
 
-        // Make API GET request
-        const results = await app.request({params, url, method: 'GET'});
+    // Make API GET request
+    const results = await app.request({ params, url, method: 'GET' });
 
-        // Parse API response into models and push to store
-        return app.store.pushPayload(results);
-    });
+    // Parse API response into models and push to store
+    return app.store.pushPayload(results);
+  });
 }
