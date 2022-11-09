@@ -6,6 +6,7 @@ use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
 use Blomstra\Search\Save\Document as ElasticDocument;
 use Blomstra\Search\Elasticsearch\TermsQuery;
+use Blomstra\Search\Searchers\Searcher;
 use Elasticsearch\Client;
 use Flarum\Api\Controller\ListDiscussionsController;
 use Flarum\Api\Serializer\DiscussionSerializer;
@@ -14,6 +15,7 @@ use Flarum\Extension\ExtensionManager;
 use Flarum\Group\Group;
 use Flarum\Http\RequestUtil;
 use Flarum\Http\UrlGenerator;
+use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\User\User;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Arr;
@@ -37,8 +39,19 @@ class SearchController extends ListDiscussionsController
         'commentCount' => 'comment_count'
     ];
 
-    public function __construct(protected Client $elastic, protected UrlGenerator $uri)
-    {}
+    protected iterable $searchers;
+    protected bool $matchSentences;
+    protected bool $matchWords;
+    protected bool $matchFragments;
+
+    public function __construct(protected Client $elastic, protected UrlGenerator $uri, Container $container, SettingsRepositoryInterface $settings)
+    {
+        $this->searchers = $container->tagged('blomstra.search.searchers');
+
+        $this->matchSentences = (bool) $settings->get('blomstra-search.match-sentences', true);
+        $this->matchWords = (bool) $settings->get('blomstra-search.match-words', true);
+        $this->matchFragments = (bool) $settings->get('blomstra-search.match-fragments', true);
+    }
 
     protected function data(ServerRequestInterface $request, Document $document)
     {
@@ -59,13 +72,10 @@ class SearchController extends ListDiscussionsController
         $filterQuery = BoolQuery::create();
 
         if (! empty($search)) {
-            $filterQuery
-                // @todo commented out to use only partial matching for now
-                ->add($this->sentenceMatch($search))
-                ->add($this->wordMatch($search, 'and'))
-                ->add($this->wordMatch($search, 'or'))
-//                ->add($this->partialMatch($search))
-            ;
+            if ($this->matchSentences) $filterQuery->add($this->sentenceMatch($search));
+            if ($this->matchWords) $filterQuery->add($this->wordMatch($search, 'and'));
+            if ($this->matchWords) $filterQuery->add($this->wordMatch($search, 'or'));
+            if ($this->matchFragments) $filterQuery->add($this->partialMatch($search));
         }
 
         $builder = (new Builder($this->elastic))
@@ -221,25 +231,28 @@ class SearchController extends ListDiscussionsController
         return $query;
     }
 
+    protected function boolQuery(Query $parent, float $boost = 1)
+    {
+        /** @var Searcher $searcher */
+        foreach ($this->searchers as $searcher) {
+            $searcher = new $searcher;
+
+            $parent->add(
+                BoolQuery::create()
+                    ->add(TermQuery::create('type', $searcher->type()), 'filter')
+                    ->add($parent->boost($boost * $searcher->boost())),
+                'should'
+            );
+        }
+
+        return $parent;
+    }
+
     protected function sentenceMatch(string $q): Query
     {
         $query = (new MatchPhraseQuery('content', $q));
 
-        return BoolQuery::create()
-            // Discussion titles
-            ->add(
-                BoolQuery::create()
-                    ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add($query->boost(2)),
-                'should'
-            )
-            // Post bodies
-            ->add(
-                BoolQuery::create()
-                    ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add($query->boost(1.9)),
-                'should'
-            );
+        return $this->boolQuery($query, 2);
     }
 
     protected function wordMatch(string $q, string $operator = 'or')
@@ -249,42 +262,14 @@ class SearchController extends ListDiscussionsController
 
         $boost = $operator === 'and' ? 1 : .8;
 
-        return BoolQuery::create()
-            // Discussion titles
-            ->add(
-                BoolQuery::create()
-                    ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add($query->boost($boost * 1.8)),
-                'should'
-            )
-            // Post bodies
-            ->add(
-                BoolQuery::create()
-                    ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add($query->boost($boost * 1.8)),
-                'should'
-            );
+        return $this->boolQuery($query, $boost);
     }
 
     protected function partialMatch(string $q)
     {
         $query = (new MatchQuery('content', $q));
 
-        return BoolQuery::create()
-            // Discussion titles
-            ->add(
-                BoolQuery::create()
-                    ->add(TermQuery::create('type', 'discussions'), 'filter')
-                    ->add(clone $query->boost(1.6)),
-                'should'
-            )
-            // Post bodies
-            ->add(
-                BoolQuery::create()
-                    ->add(TermQuery::create('type', 'posts'), 'filter')
-                    ->add(clone $query->boost(1.3)),
-                'should'
-            );
+        return $this->boolQuery($query, .6);
     }
 
 

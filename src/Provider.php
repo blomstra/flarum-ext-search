@@ -5,6 +5,7 @@ namespace Blomstra\Search;
 use Blomstra\Search\Jobs\DeletingJob;
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
+use Blomstra\Search\Searchers;
 use Blomstra\Search\Seeders;
 use Elasticsearch\Client as Elastic;
 use Elasticsearch\ClientBuilder;
@@ -79,6 +80,11 @@ class Provider extends AbstractServiceProvider
                 return new Api\Client($pipe);
             }
         );
+
+        $this->container->tag([
+            Searchers\DiscussionSearcher::class,
+            Searchers\CommentPostSearcher::class,
+        ], 'blomstra.search.searchers');
     }
 
     public function boot()
