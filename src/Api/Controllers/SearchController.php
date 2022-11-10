@@ -39,18 +39,24 @@ class SearchController extends ListDiscussionsController
         'commentCount' => 'comment_count'
     ];
 
-    protected iterable $searchers;
+    protected Collection $searchers;
     protected bool $matchSentences;
     protected bool $matchWords;
-    protected bool $matchFragments;
 
     public function __construct(protected Client $elastic, protected UrlGenerator $uri, Container $container, SettingsRepositoryInterface $settings)
     {
-        $this->searchers = $container->tagged('blomstra.search.searchers');
+        $this->searchers = $this->gatherSearchers($container->tagged('blomstra.search.searchers'), $container);
 
         $this->matchSentences = (bool) $settings->get('blomstra-search.match-sentences', true);
         $this->matchWords = (bool) $settings->get('blomstra-search.match-words', true);
-        $this->matchFragments = (bool) $settings->get('blomstra-search.match-fragments', true);
+    }
+
+    protected function gatherSearchers(iterable $searchers, Container $container)
+    {
+        return collect($searchers)
+            ->map(fn ($searcher) => new $searcher)
+            ->filter(fn (Searcher $searcher) => $searcher->enabled());
+
     }
 
     protected function data(ServerRequestInterface $request, Document $document)
@@ -75,7 +81,6 @@ class SearchController extends ListDiscussionsController
             if ($this->matchSentences) $filterQuery->add($this->sentenceMatch($search));
             if ($this->matchWords) $filterQuery->add($this->wordMatch($search, 'and'));
             if ($this->matchWords) $filterQuery->add($this->wordMatch($search, 'or'));
-            if ($this->matchFragments) $filterQuery->add($this->partialMatch($search));
         }
 
         $builder = (new Builder($this->elastic))
@@ -231,21 +236,23 @@ class SearchController extends ListDiscussionsController
         return $query;
     }
 
-    protected function boolQuery(Query $parent, float $boost = 1)
+    protected function boolQuery(Query $parent, float $boost = 1): Query
     {
+        $bool = new BoolQuery;
+
         /** @var Searcher $searcher */
         foreach ($this->searchers as $searcher) {
             $searcher = new $searcher;
 
-            $parent->add(
+            $bool->add(
                 BoolQuery::create()
                     ->add(TermQuery::create('type', $searcher->type()), 'filter')
-                    ->add($parent->boost($boost * $searcher->boost())),
+                    ->add(clone $parent->boost($boost * $searcher->boost())),
                 'should'
             );
         }
 
-        return $parent;
+        return $bool;
     }
 
     protected function sentenceMatch(string $q): Query
@@ -255,7 +262,7 @@ class SearchController extends ListDiscussionsController
         return $this->boolQuery($query, 2);
     }
 
-    protected function wordMatch(string $q, string $operator = 'or')
+    protected function wordMatch(string $q, string $operator = 'or'): Query
     {
         $query = (new MatchQuery('content', $q))
             ->operator($operator);
@@ -263,13 +270,6 @@ class SearchController extends ListDiscussionsController
         $boost = $operator === 'and' ? 1 : .8;
 
         return $this->boolQuery($query, $boost);
-    }
-
-    protected function partialMatch(string $q)
-    {
-        $query = (new MatchQuery('content', $q));
-
-        return $this->boolQuery($query, .6);
     }
 
 

@@ -98,10 +98,5 @@ app.initializers.add('blomstra-search', () => {
       setting: 'blomstra-search.match-words',
       label: app.translator.trans('blomstra-search.admin.match-words'),
       type: 'switch',
-    })
-    .registerSetting({
-      setting: 'blomstra-search.match-fragments',
-      label: app.translator.trans('blomstra-search.admin.match-fragments'),
-      type: 'switch',
     });
 });
