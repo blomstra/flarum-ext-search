@@ -267,7 +267,7 @@ class SearchController extends ListDiscussionsController
         $query = (new MatchQuery('content', $q))
             ->operator($operator);
 
-        $boost = $operator === 'and' ? 1 : .8;
+        $boost = $operator === 'and' ? 1.8 : .8;
 
         return $this->boolQuery($query, $boost);
     }
