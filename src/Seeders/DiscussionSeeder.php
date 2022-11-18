@@ -1,5 +1,15 @@
 <?php
 
+/*
+ * This file is part of ianm/translate.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Seeders;
 
 use Blomstra\Search\Save\Document;
@@ -17,7 +27,7 @@ class DiscussionSeeder extends Seeder
 {
     public function type(): string
     {
-        return resolve(DiscussionSerializer::class)->getType(new Discussion);
+        return resolve(DiscussionSerializer::class)->getType(new Discussion());
     }
 
     public function query(): Builder
@@ -32,6 +42,7 @@ class DiscussionSeeder extends Seeder
             $includes[] = 'recipientUsers';
             $includes[] = 'recipientGroups';
         }
+
         return Discussion::query()
             ->whereNull('hidden_at')
             ->with($includes);
@@ -53,21 +64,22 @@ class DiscussionSeeder extends Seeder
 
     /**
      * @param Discussion $model
+     *
      * @return Document
      */
     public function toDocument(Model $model): Document
     {
         $document = new Document([
-            'type' => $this->type(),
-            'id' => $this->type() . ':' . $model->id,
-            'content' => $model->title,
+            'type'            => $this->type(),
+            'id'              => $this->type().':'.$model->id,
+            'content'         => $model->title,
             'content_partial' => $model->title,
-            'created_at' => $model->created_at?->toAtomString(),
-            'updated_at' => $model->last_posted_at?->toAtomString(),
-            'is_private' => $model->is_private,
-            'user_id' => $model->user_id,
-            'groups' => $this->groupsForDiscussion($model),
-            'comment_count' => $model->comment_count,
+            'created_at'      => $model->created_at?->toAtomString(),
+            'updated_at'      => $model->last_posted_at?->toAtomString(),
+            'is_private'      => $model->is_private,
+            'user_id'         => $model->user_id,
+            'groups'          => $this->groupsForDiscussion($model),
+            'comment_count'   => $model->comment_count,
         ]);
 
         if ($this->extensionEnabled('fof-byobu')) {

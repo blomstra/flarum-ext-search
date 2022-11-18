@@ -1,11 +1,20 @@
 <?php
 
+/*
+ * This file is part of ianm/translate.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Commands;
 
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders\Seeder;
-use Carbon\Carbon;
 use Elasticsearch\Client;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Console\Command;
@@ -43,23 +52,23 @@ class BuildCommand extends Command
 
         $properties = [
             'properties' => [
-                'content' => ['type' => 'text', 'analyzer' => 'flarum_analyzer_partial', 'search_analyzer' => 'flarum_analyzer'],
-                'created_at' => ['type' => 'date'],
-                'updated_at' => ['type' => 'date'],
-                'is_private' => ['type' => 'boolean'],
-                'is_sticky' => ['type' => 'boolean'],
-                'groups' => ['type' => 'integer'],
+                'content'          => ['type' => 'text', 'analyzer' => 'flarum_analyzer_partial', 'search_analyzer' => 'flarum_analyzer'],
+                'created_at'       => ['type' => 'date'],
+                'updated_at'       => ['type' => 'date'],
+                'is_private'       => ['type' => 'boolean'],
+                'is_sticky'        => ['type' => 'boolean'],
+                'groups'           => ['type' => 'integer'],
                 'recipient_groups' => ['type' => 'integer'],
-                'recipient_users' => ['type' => 'integer'],
-                'comment_count' => ['type' => 'integer'],
-            ]
+                'recipient_users'  => ['type' => 'integer'],
+                'comment_count'    => ['type' => 'integer'],
+            ],
         ];
 
         if ($this->option('recreate')) {
             // Flush the index.
             $client->indices()->delete([
                 'index'              => $index,
-                'ignore_unavailable' => true
+                'ignore_unavailable' => true,
             ]);
 
             // Create a new index.
@@ -68,38 +77,38 @@ class BuildCommand extends Command
                 'body'  => [
                     'settings' => [
                         'index.max_ngram_diff' => 10,
-                        'analysis' => [
+                        'analysis'             => [
                             'analyzer' => [
                                 'flarum_analyzer' => [
-                                    'type' => $settings->get('blomstra-search.analyzer-language') ?: 'english'
+                                    'type' => $settings->get('blomstra-search.analyzer-language') ?: 'english',
                                 ],
                                 'flarum_analyzer_partial' => [
-                                    'type' => 'custom',
+                                    'type'      => 'custom',
                                     'tokenizer' => 'standard',
-                                    'filter' => [
+                                    'filter'    => [
                                         'lowercase',
-                                        'partial_search_filter'
-                                    ]
-                                ]
+                                        'partial_search_filter',
+                                    ],
+                                ],
                             ],
                             'filter' => [
                                 'partial_search_filter' => [
-                                    'type' => 'ngram',
-                                    'min_gram' => 1,
-                                    'max_gram' => 10,
-                                    'token_chars' => ['letter', 'digit', 'symbol']
-                                ]
-                            ]
-                        ]
-                    ]
-                ]
+                                    'type'        => 'ngram',
+                                    'min_gram'    => 1,
+                                    'max_gram'    => 10,
+                                    'token_chars' => ['letter', 'digit', 'symbol'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
             ]);
         }
 
         if ($this->option('recreate') || $this->option('mapping')) {
             $client->indices()->putMapping([
                 'index' => $index,
-                'body'  => $properties
+                'body'  => $properties,
             ]);
         }
 
@@ -107,7 +116,9 @@ class BuildCommand extends Command
 
         /** @var Seeder $seeder */
         foreach ($seeders as $seeder) {
-            if ($only && $seeder->type() !== $only) continue;
+            if ($only && $seeder->type() !== $only) {
+                continue;
+            }
 
             $total = 0;
 
@@ -115,7 +126,7 @@ class BuildCommand extends Command
                 ? ($this->continueAt($seeder->type()) ?? $seeder->query()->max('id'))
                 : $seeder->query()->max('id');
 
-            while($continueAt !== null) {
+            while ($continueAt !== null) {
                 /** @var Collection $collection */
                 $collection = $seeder->query()
                     ->latest('id')
