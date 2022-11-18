@@ -1,5 +1,15 @@
 <?php
 
+/*
+ * This file is part of blomstra/search.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Elasticsearch;
 
 class WildcardQuery extends \Spatie\ElasticsearchQueryBuilder\Queries\WildcardQuery
@@ -34,11 +44,10 @@ class WildcardQuery extends \Spatie\ElasticsearchQueryBuilder\Queries\WildcardQu
         $query = parent::toArray();
 
         $query['wildcard'][$this->field]['boost'] = $this->boost;
-        $query['wildcard'][$this->field]['case_insensitive'] = ! $this->sensitivity;
+        $query['wildcard'][$this->field]['case_insensitive'] = !$this->sensitivity;
 
         if ($this->rewrite) {
             $query['wildcard'][$this->field]['rewrite'] = $this->rewrite;
-
         }
 
         return $query;
