@@ -44,7 +44,7 @@ export default class DiscussionsSearchSource implements SearchSource {
     this.results.set(query, models);
   }
 
-  view(query: string): Mithril.Children {
+  view(query: string): Array<Mithril.Vnode> {
     query = query.toLowerCase();
 
     // Get results from map
@@ -54,7 +54,7 @@ export default class DiscussionsSearchSource implements SearchSource {
       const mostRelevantPost = discussion.mostRelevantPost();
 
       return (
-        <li className="DiscussionSearchResult" data-index={`${this.type}${discussion.id()}`} key={`${this.type}${discussion.id()}`}>
+        <li className="DiscussionSearchResult" data-index={`${this.type}${discussion.id()}`}>
           <Link href={app.route.discussion(discussion, mostRelevantPost && mostRelevantPost.number())}>
             <div className="DiscussionSearchResult-title">{highlight(discussion.title(), query)}</div>
             {!!mostRelevantPost && <div className="DiscussionSearchResult-excerpt">{highlight(mostRelevantPost.contentPlain(), query, 100)}</div>}
@@ -63,16 +63,14 @@ export default class DiscussionsSearchSource implements SearchSource {
       );
     });
 
-    return (
-      <>
-        <li className="Dropdown-header">{app.translator.trans('core.forum.search.discussions_heading')}</li>
-        <li>
-          <LinkButton icon="fas fa-search" href={app.route('index', { q: query })}>
-            {app.translator.trans('core.forum.search.all_discussions_button', { query })}
-          </LinkButton>
-        </li>
-        {results}
-      </>
-    );
+    return [
+      <li className="Dropdown-header">{app.translator.trans('core.forum.search.discussions_heading')}</li>,
+      <li>
+        <LinkButton icon="fas fa-search" href={app.route('index', { q: query })}>
+          {app.translator.trans('core.forum.search.all_discussions_button', { query })}
+        </LinkButton>
+      </li>,
+      ...results,
+    ];
   }
 }
