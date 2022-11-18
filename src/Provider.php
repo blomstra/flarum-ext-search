@@ -1,20 +1,11 @@
 <?php
 
-/*
- * This file is part of ianm/translate.
- *
- * Copyright (c) 2022 Blomstra Ltd.
- *
- * For the full copyright and license information, please view the LICENSE.md
- * file that was distributed with this source code.
- *
- */
-
 namespace Blomstra\Search;
 
 use Blomstra\Search\Jobs\DeletingJob;
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
+use Blomstra\Search\Seeders;
 use Elasticsearch\Client as Elastic;
 use Elasticsearch\ClientBuilder;
 use Flarum\Api\Client;
@@ -62,6 +53,7 @@ class Provider extends AbstractServiceProvider
             return $builder->build();
         });
 
+
         $this->container->instance(
             'blomstra.search.elastic_index',
             $settings->get('blomstra-search.elastic-index', 'flarum')
@@ -70,19 +62,19 @@ class Provider extends AbstractServiceProvider
         $this->container->extend(
             Client::class,
             function () {
-                $pipe = new MiddlewarePipe();
+                $pipe = new MiddlewarePipe;
 
                 $exclude = resolve('flarum.api_client.exclude_middleware');
 
                 $middlewareStack = array_filter(resolve('flarum.api.middleware'), function ($middlewareClass) use ($exclude) {
-                    return !in_array($middlewareClass, $exclude);
+                    return ! in_array($middlewareClass, $exclude);
                 });
 
                 foreach ($middlewareStack as $middleware) {
                     $pipe->pipe(resolve($middleware));
                 }
 
-                $pipe->pipe(new ExecuteRoute());
+                $pipe->pipe(new ExecuteRoute);
 
                 return new Api\Client($pipe);
             }

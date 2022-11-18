@@ -1,21 +1,11 @@
 <?php
 
-/*
- * This file is part of ianm/translate.
- *
- * Copyright (c) 2022 Blomstra Ltd.
- *
- * For the full copyright and license information, please view the LICENSE.md
- * file that was distributed with this source code.
- *
- */
-
 namespace Blomstra\Search\Api\Controllers;
 
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
-use Blomstra\Search\Elasticsearch\TermsQuery;
 use Blomstra\Search\Save\Document as ElasticDocument;
+use Blomstra\Search\Elasticsearch\TermsQuery;
 use Elasticsearch\Client;
 use Flarum\Api\Controller\ListDiscussionsController;
 use Flarum\Api\Serializer\DiscussionSerializer;
@@ -43,13 +33,12 @@ class SearchController extends ListDiscussionsController
 
     protected array $translateSort = [
         'lastPostedAt' => 'updated_at',
-        'createdAt'    => 'created_at',
-        'commentCount' => 'comment_count',
+        'createdAt' => 'created_at',
+        'commentCount' => 'comment_count'
     ];
 
     public function __construct(protected Client $elastic, protected UrlGenerator $uri)
-    {
-    }
+    {}
 
     protected function data(ServerRequestInterface $request, Document $document)
     {
@@ -69,14 +58,14 @@ class SearchController extends ListDiscussionsController
 
         $filterQuery = BoolQuery::create();
 
-        if (!empty($search)) {
+        if (! empty($search)) {
             $filterQuery
                 // @todo commented out to use only partial matching for now
                 ->add($this->sentenceMatch($search))
                 ->add($this->wordMatch($search, 'and'))
                 ->add($this->wordMatch($search, 'or'))
 //                ->add($this->partialMatch($search))
-;
+            ;
         }
 
         $builder = (new Builder($this->elastic))
@@ -102,7 +91,7 @@ class SearchController extends ListDiscussionsController
 
             // If the first level of the relationship wasn't explicitly included,
             // add it so the code below can look for it
-            if (!in_array('mostRelevantPost', $include)) {
+            if (! in_array('mostRelevantPost', $include)) {
                 $include[] = 'mostRelevantPost';
             }
         }
@@ -117,19 +106,19 @@ class SearchController extends ListDiscussionsController
                 if ($type === 'posts') {
                     return [
                         'most_relevant_post_id' => $id,
-                        'weight'                => Arr::get($hit, 'sort.0'),
+                        'weight' => Arr::get($hit, 'sort.0')
                     ];
                 } else {
                     return [
                         'discussion_id' => $id,
-                        'weight'        => Arr::get($hit, 'sort.0'),
+                        'weight' => Arr::get($hit, 'sort.0')
                     ];
                 }
             });
 
         $document->addPaginationLinks(
             $this->uri->to('api')->route('blomstra.search', [
-                'type' => 'discussions',
+                'type' => 'discussions'
             ]),
             $request->getQueryParams(),
             $offset,
@@ -143,7 +132,7 @@ class SearchController extends ListDiscussionsController
             ->select('discussions.*')
             ->join('posts', 'posts.discussion_id', 'discussions.id')
             // Extra safety to prevent leaking hidden discussion (titles) towards search results.
-            ->when($actor->isGuest() || !$actor->hasPermission('discussion.hide'), fn ($query) => $query->whereNull('discussions.hidden_at'))
+            ->when($actor->isGuest() || ! $actor->hasPermission('discussion.hide'), fn($query) => $query->whereNull('discussions.hidden_at'))
             ->where(function ($query) use ($results) {
                 $query
                     ->whereIn('discussions.id', $results->pluck('discussion_id')->filter())
@@ -297,6 +286,7 @@ class SearchController extends ListDiscussionsController
                 'should'
             );
     }
+
 
     protected function getGroups(User $actor): Collection
     {

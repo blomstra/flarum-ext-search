@@ -1,15 +1,5 @@
 <?php
 
-/*
- * This file is part of ianm/translate.
- *
- * Copyright (c) 2022 Blomstra Ltd.
- *
- * For the full copyright and license information, please view the LICENSE.md
- * file that was distributed with this source code.
- *
- */
-
 namespace Blomstra\Search\Elasticsearch;
 
 use Spatie\ElasticsearchQueryBuilder\Queries\Query;
@@ -48,12 +38,12 @@ class SimpleSearchQuery implements Query
     {
         return [
             'simple_query_string' => [
-                'query'            => $this->value,
-                'fields'           => $this->fields,
-                'analyzer'         => $this->analyzer,
+                'query' => $this->value,
+                'fields' => $this->fields,
+                'analyzer' => $this->analyzer,
                 'default_operator' => 'AND',
-                'boost'            => $this->boost,
-            ],
+                'boost' => $this->boost
+            ]
         ];
     }
 }

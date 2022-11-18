@@ -1,15 +1,5 @@
 <?php
 
-/*
- * This file is part of ianm/translate.
- *
- * Copyright (c) 2022 Blomstra Ltd.
- *
- * For the full copyright and license information, please view the LICENSE.md
- * file that was distributed with this source code.
- *
- */
-
 namespace Blomstra\Search\Seeders;
 
 use Blomstra\Search\Save\Document;
@@ -25,7 +15,7 @@ class CommentSeeder extends Seeder
 {
     public function type(): string
     {
-        return resolve(PostSerializer::class)->getType(new CommentPost());
+        return resolve(PostSerializer::class)->getType(new CommentPost);
     }
 
     public function query(): Builder
@@ -63,22 +53,21 @@ class CommentSeeder extends Seeder
 
     /**
      * @param CommentPost $model
-     *
      * @return Document
      */
     public function toDocument(Model $model): Document
     {
         $document = new Document([
-            'type'            => $this->type(),
-            'id'              => $this->type().':'.$model->id,
-            'content'         => $model->content,
+            'type' => $this->type(),
+            'id' => $this->type() . ':' . $model->id,
+            'content' => $model->content,
             'content_partial' => $model->content,
-            'created_at'      => $model->created_at?->toAtomString(),
-            'updated_at'      => $model->edited_at?->toAtomString(),
-            'is_private'      => $model->is_private,
-            'user_id'         => $model->user_id,
-            'groups'          => $this->groupsForDiscussion($model->discussion),
-            'comment_count'   => $model->discussion->comment_count,
+            'created_at' => $model->created_at?->toAtomString(),
+            'updated_at' => $model->edited_at?->toAtomString(),
+            'is_private' => $model->is_private,
+            'user_id' => $model->user_id,
+            'groups' => $this->groupsForDiscussion($model->discussion),
+            'comment_count' => $model->discussion->comment_count,
         ]);
 
         if ($this->extensionEnabled('fof-byobu')) {
