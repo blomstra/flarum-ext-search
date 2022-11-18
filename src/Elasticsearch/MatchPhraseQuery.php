@@ -1,5 +1,15 @@
 <?php
 
+/*
+ * This file is part of blomstra/search.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Elasticsearch;
 
 use Spatie\ElasticsearchQueryBuilder\Queries\MatchQuery;
@@ -22,7 +32,7 @@ class MatchPhraseQuery extends MatchQuery
         $query[$this->field]['boost'] = $this->boost;
 
         return [
-            'match_phrase' => $query
+            'match_phrase' => $query,
         ];
     }
 }

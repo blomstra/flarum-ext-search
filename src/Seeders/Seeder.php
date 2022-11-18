@@ -1,5 +1,15 @@
 <?php
 
+/*
+ * This file is part of blomstra/search.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Seeders;
 
 use Blomstra\Search\Save\Document;
@@ -20,6 +30,7 @@ abstract class Seeder
     abstract public function query(): Builder;
 
     abstract public static function savingOn(Dispatcher $events, callable $callable);
+
     abstract public static function deletingOn(Dispatcher $events, callable $callable);
 
     abstract public function toDocument(Model $model): Document;
@@ -56,7 +67,7 @@ abstract class Seeder
             })->flatten();
         }
 
-        if (! $discussion->is_private && $permissions->isEmpty()) {
+        if (!$discussion->is_private && $permissions->isEmpty()) {
             $permissions = $globalPermission;
         }
 
