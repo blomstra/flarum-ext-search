@@ -8,8 +8,8 @@ export default function extendDiscussionState() {
   override(DiscussionListState.prototype, 'loadPage', async function (this: DiscussionListState, original, page: number = 1) {
     const preloaded = app.data.apiDocument || null;
 
-    // If existing payload is given fallback on native page.
-    if (preloaded) return original.call(this, page);
+    // If existing payload is given or no search is made,  fallback on native page.
+    if (preloaded || !this.requestParams()?.filter?.q) return original.call(this, page);
 
     const params = this.requestParams();
     params.page = {
