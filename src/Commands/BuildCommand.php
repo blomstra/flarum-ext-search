@@ -15,7 +15,6 @@ namespace Blomstra\Search\Commands;
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders\Seeder;
-use Carbon\Carbon;
 use Elasticsearch\Client;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Console\Command;
@@ -142,12 +141,12 @@ class BuildCommand extends Command
                     $response = (new Builder($client))
                         ->index($index)
                         ->size(1000)
-                        ->addQuery((new BoolQuery)
+                        ->addQuery(
+                            (new BoolQuery())
                             ->add((new RangeQuery('rawId'))
                                 ->gte($continueAt - 1000)
                                 ->lte($continueAt))
                             ->add(TermQuery::create('type', $seeder->type()))
-
                         )
                         ->search();
 

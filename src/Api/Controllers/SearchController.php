@@ -48,7 +48,8 @@ class SearchController extends ListDiscussionsController
     ];
 
     public function __construct(protected Client $elastic, protected UrlGenerator $uri)
-    {}
+    {
+    }
 
     protected function data(ServerRequestInterface $request, Document $document)
     {

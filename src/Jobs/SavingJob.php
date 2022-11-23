@@ -35,7 +35,7 @@ class SavingJob extends Job
             ];
         })
         ->flatten(1);
-dump($body);
+        dump($body);
         $response = $client->bulk([
             'index'   => $this->index,
             'body'    => $body->toArray(),
