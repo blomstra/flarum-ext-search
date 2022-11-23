@@ -36,7 +36,8 @@ class BuildCommand extends Command
         {--recreate : create or recreate the index}
         {--mapping : recreate the mapping}
         {--continue : continue each object type where you left off}
-        {--seed-missing : attempt to seed objects that are missing in the index}';
+        {--seed-missing : attempt to seed only objects that are missing in the index}';
+
     protected $description = 'Rebuilds the complete search server with its documents.';
 
     public function handle(Container $container)
@@ -56,6 +57,7 @@ class BuildCommand extends Command
         /** @var SettingsRepositoryInterface $settings */
         $settings = $container->make(SettingsRepositoryInterface::class);
 
+        // Elastic scheme definition.
         $properties = [
             'properties' => [
                 'content'          => ['type' => 'text', 'analyzer' => 'flarum_analyzer_partial', 'search_analyzer' => 'flarum_analyzer'],
@@ -72,6 +74,7 @@ class BuildCommand extends Command
             ],
         ];
 
+        // Remove/delete the whole index.
         if ($this->option('recreate')) {
             // Flush the index.
             $client->indices()->delete([
@@ -113,6 +116,7 @@ class BuildCommand extends Command
             ]);
         }
 
+        // Create the index.
         if ($this->option('recreate') || $this->option('mapping')) {
             $client->indices()->putMapping([
                 'index' => $index,
@@ -120,6 +124,7 @@ class BuildCommand extends Command
             ]);
         }
 
+        // Seed only a specific resource.
         $only = $this->option('only');
 
         /** @var Seeder $seeder */
