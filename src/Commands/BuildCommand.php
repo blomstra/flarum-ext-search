@@ -15,30 +15,37 @@ namespace Blomstra\Search\Commands;
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
 use Blomstra\Search\Seeders\Seeder;
+use Carbon\Carbon;
 use Elasticsearch\Client;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Arr;
+use Spatie\ElasticsearchQueryBuilder\Builder;
+use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
+use Spatie\ElasticsearchQueryBuilder\Queries\RangeQuery;
+use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 
 class BuildCommand extends Command
 {
     protected $signature = 'blomstra:search:index
         {--max-id= : Limits for each object the number of items to seed}
-        {--chunk-size= : Size of the chunks to dispatch into jobs}
         {--throttle= : Number of seconds to wait between pushing to the queue}
         {--only= : type to run seeder for, eg discussions or posts}
         {--recreate : create or recreate the index}
         {--mapping : recreate the mapping}
-        {--continue : continue each object type where you left off}';
+        {--continue : continue each object type where you left off}
+        {--seed-missing : attempt to seed objects that are missing in the index}';
     protected $description = 'Rebuilds the complete search server with its documents.';
 
     public function handle(Container $container)
     {
+        /** @var string $index */
         $index = $container->make('blomstra.search.elastic_index');
 
-        /** @var array $seeders */
+        /** @var array|string[] $seeders */
         $seeders = $container->tagged('blomstra.search.seeders');
 
         /** @var Queue $queue */
@@ -53,11 +60,13 @@ class BuildCommand extends Command
         $properties = [
             'properties' => [
                 'content'          => ['type' => 'text', 'analyzer' => 'flarum_analyzer_partial', 'search_analyzer' => 'flarum_analyzer'],
+                'rawId'            => ['type' => 'integer'],
                 'created_at'       => ['type' => 'date'],
                 'updated_at'       => ['type' => 'date'],
                 'is_private'       => ['type' => 'boolean'],
                 'is_sticky'        => ['type' => 'boolean'],
                 'groups'           => ['type' => 'integer'],
+                'tags'             => ['type' => 'integer'],
                 'recipient_groups' => ['type' => 'integer'],
                 'recipient_users'  => ['type' => 'integer'],
                 'comment_count'    => ['type' => 'integer'],
@@ -126,7 +135,25 @@ class BuildCommand extends Command
                 ? ($this->continueAt($seeder->type()) ?? $seeder->query()->max('id'))
                 : $seeder->query()->max('id');
 
+            $seeded = null;
+
             while ($continueAt !== null) {
+                if ($this->option('seed-missing')) {
+                    $response = (new Builder($client))
+                        ->index($index)
+                        ->size(1000)
+                        ->addQuery((new BoolQuery)
+                            ->add((new RangeQuery('rawId'))
+                                ->gte($continueAt - 1000)
+                                ->lte($continueAt))
+                            ->add(TermQuery::create('type', $seeder->type()))
+
+                        )
+                        ->search();
+
+                    $seeded = Arr::pluck(Arr::get($response, 'hits.hits'), '_source.rawId');
+                }
+
                 /** @var Collection $collection */
                 $collection = $seeder->query()
                     ->latest('id')
@@ -134,6 +161,7 @@ class BuildCommand extends Command
                     ->when($this->option('max-id'), function ($query, $id) {
                         $query->where('id', '<=', $id);
                     })
+                    ->when($seeded, fn ($query, $seeded) => $query->whereNotIn('id', $seeded))
                     ->get();
 
                 $min = $collection->min('id');

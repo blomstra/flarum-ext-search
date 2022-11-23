@@ -72,6 +72,7 @@ class DiscussionSeeder extends Seeder
         $document = new Document([
             'type'            => $this->type(),
             'id'              => $this->type().':'.$model->id,
+            'rawId'           => $model->id,
             'content'         => $model->title,
             'content_partial' => $model->title,
             'created_at'      => $model->created_at?->toAtomString(),
@@ -81,6 +82,10 @@ class DiscussionSeeder extends Seeder
             'groups'          => $this->groupsForDiscussion($model),
             'comment_count'   => $model->comment_count,
         ]);
+
+        if ($this->extensionEnabled('flarum-tags')) {
+            $document['tags'] = $model->tags->pluck('id')->toArray();
+        }
 
         if ($this->extensionEnabled('fof-byobu')) {
             $document['recipient_users'] = $model->recipientUsers->pluck('id')->toArray();

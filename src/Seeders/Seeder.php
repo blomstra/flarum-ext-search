@@ -47,7 +47,6 @@ abstract class Seeder
             /** @var Collection $tags */
             $tags = $discussion->tags;
 
-            $filters['tags'] = $tags->pluck('id')->toArray();
             $tagPermissions = Permission::query()
                 ->whereIn(
                     'permission',

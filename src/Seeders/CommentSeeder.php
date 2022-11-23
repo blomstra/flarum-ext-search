@@ -71,6 +71,7 @@ class CommentSeeder extends Seeder
         $document = new Document([
             'type'            => $this->type(),
             'id'              => $this->type().':'.$model->id,
+            'rawId'           => $model->id,
             'content'         => $model->content,
             'content_partial' => $model->content,
             'created_at'      => $model->created_at?->toAtomString(),
@@ -80,6 +81,10 @@ class CommentSeeder extends Seeder
             'groups'          => $this->groupsForDiscussion($model->discussion),
             'comment_count'   => $model->discussion->comment_count,
         ]);
+
+        if ($this->extensionEnabled('flarum-tags')) {
+            $document['tags'] = $model->discussion->tags->pluck('id')->toArray();
+        }
 
         if ($this->extensionEnabled('fof-byobu')) {
             $document['recipient_users'] = $model->discussion->recipientUsers->pluck('id')->toArray();
