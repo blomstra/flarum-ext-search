@@ -64,7 +64,7 @@ class SearchController extends ListDiscussionsController
     protected function gatherSearchers(iterable $searchers)
     {
         return collect($searchers)
-            ->map(fn ($searcher) => new $searcher)
+            ->map(fn ($searcher) => new $searcher())
             ->filter(fn (Searcher $searcher) => $searcher->enabled());
     }
 
@@ -86,11 +86,16 @@ class SearchController extends ListDiscussionsController
 
         $filterQuery = BoolQuery::create();
 
-
-        if (! empty($search)) {
-            if ($this->matchSentences) $filterQuery->add($this->sentenceMatch($search));
-            if ($this->matchWords) $filterQuery->add($this->wordMatch($search, 'and'));
-            if ($this->matchWords) $filterQuery->add($this->wordMatch($search, 'or'));
+        if (!empty($search)) {
+            if ($this->matchSentences) {
+                $filterQuery->add($this->sentenceMatch($search));
+            }
+            if ($this->matchWords) {
+                $filterQuery->add($this->wordMatch($search, 'and'));
+            }
+            if ($this->matchWords) {
+                $filterQuery->add($this->wordMatch($search, 'or'));
+            }
         }
 
         $builder = (new Builder($this->elastic))
@@ -248,11 +253,11 @@ class SearchController extends ListDiscussionsController
 
     protected function boolQuery(Query $parent, float $boost = 1): Query
     {
-        $bool = new BoolQuery;
+        $bool = new BoolQuery();
 
         /** @var Searcher $searcher */
         foreach ($this->searchers as $searcher) {
-            $searcher = new $searcher;
+            $searcher = new $searcher();
 
             $bool->add(
                 BoolQuery::create()

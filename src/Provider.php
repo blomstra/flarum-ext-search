@@ -15,8 +15,6 @@ namespace Blomstra\Search;
 use Blomstra\Search\Jobs\DeletingJob;
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\SavingJob;
-use Blomstra\Search\Searchers;
-use Blomstra\Search\Seeders;
 use Elasticsearch\Client as Elastic;
 use Elasticsearch\ClientBuilder;
 use Flarum\Api\Client;

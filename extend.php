@@ -27,10 +27,10 @@ return [
     (new Flarum\Routes('api'))
         ->get('/blomstra/search/{type}', 'blomstra.search', Api\Controllers\SearchController::class)
         ->put('/blomstra/search/index', 'blomstra.search.index', Api\Controllers\IndexController::class),
-    (new Flarum\Console)
+    (new Flarum\Console())
         ->command(Commands\BuildCommand::class),
 
-    (new Flarum\Settings)
+    (new Flarum\Settings())
         ->default('blomstra-search.search-discussion-subjects', true)
-        ->default('blomstra-search.search-post-bodies', true)
+        ->default('blomstra-search.search-post-bodies', true),
 ];
