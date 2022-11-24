@@ -57,8 +57,8 @@ class SearchController extends ListDiscussionsController
     {
         $this->searchers = $this->gatherSearchers($container->tagged('blomstra.search.searchers'));
 
-        $this->matchSentences = (bool) $settings->get('blomstra-search.match-sentences', true);
-        $this->matchWords = (bool) $settings->get('blomstra-search.match-words', true);
+        $this->matchSentences = true;
+        $this->matchWords = true;
     }
 
     protected function gatherSearchers(iterable $searchers)

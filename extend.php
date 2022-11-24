@@ -33,6 +33,4 @@ return [
     (new Flarum\Settings)
         ->default('blomstra-search.search-discussion-subjects', true)
         ->default('blomstra-search.search-post-bodies', true)
-        ->default('blomstra-search.match-sentences', true)
-        ->default('blomstra-search.match-words', true)
 ];

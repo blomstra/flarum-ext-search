@@ -88,15 +88,5 @@ app.initializers.add('blomstra-search', () => {
       setting: 'blomstra-search.search-post-bodies',
       label: app.translator.trans('blomstra-search.admin.search-post-bodies'),
       type: 'switch',
-    })
-    .registerSetting({
-      setting: 'blomstra-search.match-sentences',
-      label: app.translator.trans('blomstra-search.admin.match-sentences'),
-      type: 'switch',
-    })
-    .registerSetting({
-      setting: 'blomstra-search.match-words',
-      label: app.translator.trans('blomstra-search.admin.match-words'),
-      type: 'switch',
     });
 });
