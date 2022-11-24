@@ -78,5 +78,25 @@ app.initializers.add('blomstra-search', () => {
       label: app.translator.trans('blomstra-search.admin.elastic-index'),
       default: 'flarum',
       type: 'input',
+    })
+    .registerSetting({
+      setting: 'blomstra-search.search-discussion-subjects',
+      label: app.translator.trans('blomstra-search.admin.search-discussion-subjects'),
+      type: 'switch',
+    })
+    .registerSetting({
+      setting: 'blomstra-search.search-post-bodies',
+      label: app.translator.trans('blomstra-search.admin.search-post-bodies'),
+      type: 'switch',
+    })
+    .registerSetting({
+      setting: 'blomstra-search.match-sentences',
+      label: app.translator.trans('blomstra-search.admin.match-sentences'),
+      type: 'switch',
+    })
+    .registerSetting({
+      setting: 'blomstra-search.match-words',
+      label: app.translator.trans('blomstra-search.admin.match-words'),
+      type: 'switch',
     });
 });
