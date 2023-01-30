@@ -10,7 +10,7 @@ import extendDiscussionState from './PaginatedListStates/extendDiscussionState';
 
 app.initializers.add('blomstra-search', () => {
   extend(Search.prototype, 'sourceItems', function (this: Search<SearchAttrs>, items: ItemList<SearchSource>) {
-    items.setContent('discussions', new DiscussionsSearchSource());
+    items.replace('discussions', new DiscussionsSearchSource());
   });
 });
 
