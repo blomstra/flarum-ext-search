@@ -9,6 +9,7 @@ blomstra-search:
             help: |
                 The analyzer makes search understand stop words and undertakes language
                 specific improvements for indexing.
+            custom: Use custom analyzer
         search-discussion-subjects: Search inside discussion titles
         search-post-bodies: Search inside comments
         match-sentences: Match search term against full sentence

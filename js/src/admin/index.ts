@@ -1,6 +1,9 @@
 import app from 'flarum/admin/app';
+import extendCustomSettingComponents from './extendCustomSettingComponents';
 
 app.initializers.add('blomstra-search', () => {
+  extendCustomSettingComponents();
+
   const languages = new Map();
   [
     'arabic',
@@ -69,8 +72,9 @@ app.initializers.add('blomstra-search', () => {
       setting: 'blomstra-search.analyzer-language',
       label: app.translator.trans('blomstra-search.admin.analyzer.label'),
       help: app.translator.trans('blomstra-search.admin.analyzer.help'),
-      type: 'select',
+      type: 'select-or-input',
       options: Object.fromEntries(languages.entries()),
+      checkboxDescription: app.translator.trans('blomstra-search.admin.analyzer.custom'),
       default: 'english',
     })
     .registerSetting({
