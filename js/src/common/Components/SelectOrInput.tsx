@@ -30,6 +30,9 @@ export interface ISelectOrInputAttrs<
     rawTextInputAttrs?: ComponentAttrs;
 }
 
+// when value is `undefined`, choose the first item of select
+// when value is in select, use value as value of select
+// otherwise, use value as value of input
 export default class SelectOrInput<CustomAttrs extends ISelectOrInputAttrs> extends Component<CustomAttrs> {    
     private onCheckboxChange(checked: boolean, component: Checkbox) {
         this.attrs.value = checked ? '' : undefined;
