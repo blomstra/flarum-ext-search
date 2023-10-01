@@ -74,7 +74,7 @@ app.initializers.add('blomstra-search', () => {
       help: app.translator.trans('blomstra-search.admin.analyzer.help'),
       type: 'select-or-input',
       options: Object.fromEntries(languages.entries()),
-      checkboxDescription: app.translator.trans('blomstra-search.admin.analyzer.custom'),
+      inputDescription: app.translator.trans('blomstra-search.admin.analyzer.custom'),
       default: 'english',
     })
     .registerSetting({
