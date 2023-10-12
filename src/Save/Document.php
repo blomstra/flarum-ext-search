@@ -16,7 +16,6 @@ use Carbon\Carbon;
 use Illuminate\Support\Fluent;
 
 /**
- * @property string      $type
  * @property string      $id
  * @property string      $content
  * @property Carbon      $created_at

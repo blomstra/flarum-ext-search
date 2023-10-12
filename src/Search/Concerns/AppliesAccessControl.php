@@ -1,39 +1,28 @@
 <?php
 
-/*
- * This file is part of blomstra/search.
- *
- * Copyright (c) 2022 Blomstra Ltd.
- *
- * For the full copyright and license information, please view the LICENSE.md
- * file that was distributed with this source code.
- *
- */
+namespace Blomstra\Search\Search\Concerns;
 
-namespace Blomstra\Search\Seeders;
-
-use Blomstra\Search\Save\Document;
 use Flarum\Discussion\Discussion;
 use Flarum\Extension\ExtensionManager;
 use Flarum\Group\Group;
 use Flarum\Group\Permission;
 use Flarum\Tags\Tag;
-use Illuminate\Contracts\Events\Dispatcher;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Eloquent\Model;
+use Flarum\User\User;
 
-abstract class Seeder
+trait AppliesAccessControl
 {
-    abstract public function type(): string;
+    protected static function groupsForUser(User $actor): array
+    {
+        $groups = $actor->groups->pluck('id');
 
-    abstract public function query(): Builder;
+        $groups->add(Group::GUEST_ID);
 
-    abstract public static function savingOn(Dispatcher $events, callable $callable);
+        if ($actor->is_email_confirmed) {
+            $groups->add(Group::MEMBER_ID);
+        }
 
-    abstract public static function deletingOn(Dispatcher $events, callable $callable);
-
-    abstract public function toDocument(Model $model): Document;
+        return $groups->toArray();
+    }
 
     protected function groupsForDiscussion(Discussion $discussion): array
     {
@@ -43,8 +32,8 @@ abstract class Seeder
             ->where('permission', 'viewForum')
             ->pluck('group_id');
 
-        if ($this->extensionEnabled('flarum-tags')) {
-            /** @var Collection $tags */
+        if (resolve(ExtensionManager::class)->isEnabled('flarum-tags')) {
+            /** @var \Illuminate\Database\Eloquent\Collection $tags */
             $tags = $discussion->tags;
 
             $tagPermissions = Permission::query()
@@ -71,13 +60,5 @@ abstract class Seeder
         }
 
         return $permissions->toArray();
-    }
-
-    protected function extensionEnabled(string $extension): bool
-    {
-        /** @var ExtensionManager $manager */
-        $manager = resolve(ExtensionManager::class);
-
-        return $manager->isEnabled($extension);
     }
 }
