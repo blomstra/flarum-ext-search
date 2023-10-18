@@ -64,7 +64,7 @@ class ElasticIndex
             return [
                 [
                     'delete' => [
-                        '_index' => $index(),
+                        '_index' => $index,
                         '_id'    => $model->id,
                     ],
                 ],
@@ -73,7 +73,7 @@ class ElasticIndex
 
         $this->handleResponse(
             $this->client->bulk([
-                'index'   => $index(),
+                'index'   => $index,
                 'body'    => $body->toArray(),
                 'refresh' => true,
             ])
