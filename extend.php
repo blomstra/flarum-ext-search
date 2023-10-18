@@ -22,7 +22,7 @@ return [
     (new Flarum\Frontend('admin'))
         ->js(__DIR__.'/js/dist/admin.js'),
 
-    (new Flarum\Locales(__DIR__.'/resources/locale')),
+    new Flarum\Locales(__DIR__.'/resources/locale'),
 
     (new Flarum\Routes('api'))
         ->get('/blomstra/search/{type}', 'blomstra.search', Api\Controllers\SearchController::class)
