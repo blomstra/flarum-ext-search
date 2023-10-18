@@ -1,5 +1,15 @@
 <?php
 
+/*
+ * This file is part of blomstra/search.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Post;
 
 use Blomstra\Search\Save\Document;
@@ -25,7 +35,7 @@ class CommentPostIndexer implements IndexerInterface
         return 'posts';
     }
 
-    function save(array $models): void
+    public function save(array $models): void
     {
         $this->elastic->save(
             self::index(),
@@ -34,7 +44,7 @@ class CommentPostIndexer implements IndexerInterface
         );
     }
 
-    function delete(array $models): void
+    public function delete(array $models): void
     {
         $this->elastic->delete(
             self::index(),

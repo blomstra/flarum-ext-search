@@ -13,6 +13,7 @@
 namespace Blomstra\Search\Commands;
 
 use Blomstra\Search\Discussion\DiscussionIndexer;
+use Blomstra\Search\Elasticsearch\Builder;
 use Blomstra\Search\Post\CommentPostIndexer;
 use Elasticsearch\Client;
 use Flarum\Discussion\Discussion;
@@ -24,7 +25,6 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
-use Blomstra\Search\Elasticsearch\Builder;
 use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\RangeQuery;
 
@@ -45,11 +45,11 @@ class BuildCommand extends Command
     {
         $indexers = [
             'discussions' => DiscussionIndexer::class,
-            'posts' => CommentPostIndexer::class,
+            'posts'       => CommentPostIndexer::class,
         ];
         $models = [
             'discussions' => Discussion::class,
-            'posts' => Post::class,
+            'posts'       => Post::class,
         ];
 
         $only = $this->option('only');
@@ -72,7 +72,7 @@ class BuildCommand extends Command
             }
 
             // Create the index.
-            if (! $this->option('recreate') && $this->option('mapping')) {
+            if (!$this->option('recreate') && $this->option('mapping')) {
                 $client->indices()->putMapping([
                     'index' => $indexer::index(),
                     'body'  => $properties,

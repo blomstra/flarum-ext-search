@@ -1,7 +1,18 @@
 <?php
 
+/*
+ * This file is part of blomstra/search.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Discussion;
 
+use Blomstra\Search\Elasticsearch\Builder;
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
 use Blomstra\Search\Elasticsearch\TermsQuery;
@@ -19,7 +30,6 @@ use Illuminate\Support\Collection;
 use Spatie\ElasticsearchQueryBuilder\Aggregations\FilterAggregation;
 use Spatie\ElasticsearchQueryBuilder\Aggregations\TermsAggregation;
 use Spatie\ElasticsearchQueryBuilder\Aggregations\TopHitsAggregation;
-use Blomstra\Search\Elasticsearch\Builder;
 use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\Query;
 use Spatie\ElasticsearchQueryBuilder\Sorts\Sort;
@@ -81,17 +91,17 @@ class FulltextFilter extends AbstractFulltextFilter
         $state->retrieveDatabaseRecordsUsing(function (array $response, SearchCriteria $criteria): Collection {
             $buckets = Collection::make(Arr::get($response, 'aggregations.posts.per_discussion.buckets'))
                 ->map(fn (array $hit) => [
-                    'discussion_id' => $hit['key'],
-                    'most_relevant_post_id' => Arr::get($hit, 'most_relevant_post_id.most_relevant_post_id.hits.hits.0._id'),
+                    'discussion_id'            => $hit['key'],
+                    'most_relevant_post_id'    => Arr::get($hit, 'most_relevant_post_id.most_relevant_post_id.hits.hits.0._id'),
                     'most_relevant_post_score' => Arr::get($hit, 'most_relevant_post_id.most_relevant_post_id.hits.hits.0._score'),
                 ])->keyBy('discussion_id');
 
             $results = Collection::make(Arr::get($response, 'hits.hits'))
                 ->map(fn (array $hit) => [
-                    'discussion_id' => $hit['_source']['discussion_id'],
-                    'most_relevant_post_id' => Arr::get($buckets->get($hit['_source']['discussion_id']), 'most_relevant_post_id'),
+                    'discussion_id'            => $hit['_source']['discussion_id'],
+                    'most_relevant_post_id'    => Arr::get($buckets->get($hit['_source']['discussion_id']), 'most_relevant_post_id'),
                     'most_relevant_post_score' => Arr::get($buckets->get($hit['_source']['discussion_id']), 'most_relevant_post_score'),
-                    'title_score' => $hit['_score'],
+                    'title_score'              => $hit['_score'],
                 ])->keyBy('discussion_id');
 
             // We have $hits and $buckets, both are sorted by score.
@@ -122,17 +132,17 @@ class FulltextFilter extends AbstractFulltextFilter
                 ->select('discussions.*')
                 ->selectRaw(
                     $connection->raw('COALESCE(('.$connection->getQueryGrammar()->compileSelect(
-                            $postsQuery = Post::query()
-                                ->select('posts.id')
-                                ->whereIn('posts.id', $results->pluck('most_relevant_post_id')->filter())
-                                ->whereColumn('discussions.id', '=', 'posts.discussion_id')
-                                ->limit(1)
-                                ->toBase()
-                        ).'), first_post_id) as most_relevant_post_id')->getValue($connection->getQueryGrammar())
+                        $postsQuery = Post::query()
+                            ->select('posts.id')
+                            ->whereIn('posts.id', $results->pluck('most_relevant_post_id')->filter())
+                            ->whereColumn('discussions.id', '=', 'posts.discussion_id')
+                            ->limit(1)
+                            ->toBase()
+                    ).'), first_post_id) as most_relevant_post_id')->getValue($connection->getQueryGrammar())
                 )
                 ->mergeBindings($postsQuery)
                 ->whereIn('discussions.id', $results->pluck('discussion_id'))
-                ->orderByRaw('FIELD(`discussions`.`id`, ' . implode(',', $results->pluck('discussion_id')->all()) . ')')
+                ->orderByRaw('FIELD(`discussions`.`id`, '.implode(',', $results->pluck('discussion_id')->all()).')')
                 ->get();
         });
     }

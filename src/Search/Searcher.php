@@ -1,7 +1,18 @@
 <?php
 
+/*
+ * This file is part of blomstra/search.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Search;
 
+use Blomstra\Search\Elasticsearch\Builder;
 use Elasticsearch\Client;
 use Flarum\Search\Filter\FilterManager;
 use Flarum\Search\SearchCriteria;
@@ -10,7 +21,6 @@ use Flarum\Search\SearchResults;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
-use Blomstra\Search\Elasticsearch\Builder;
 use Spatie\ElasticsearchQueryBuilder\Sorts\Sort;
 
 abstract class Searcher implements SearcherInterface
@@ -43,8 +53,8 @@ abstract class Searcher implements SearcherInterface
                 $id = Str::after($hit['_source']['id'], "$type:");
 
                 return [
-                    'id' => $id,
-                    'score' => Arr::get($hit, '_score'),
+                    'id'     => $id,
+                    'score'  => Arr::get($hit, '_score'),
                     'weight' => Arr::get($hit, 'sort.0'),
                 ];
             })->sortByDesc('weight');
@@ -56,7 +66,7 @@ abstract class Searcher implements SearcherInterface
 
             return $this->getQuery($criteria->actor)
                 ->whereIn('id', $ids)
-                ->orderByRaw('FIELD(id, ' . implode(',', $ids) . ')')
+                ->orderByRaw('FIELD(id, '.implode(',', $ids).')')
                 ->get();
         });
 
@@ -81,7 +91,7 @@ abstract class Searcher implements SearcherInterface
 
         $callback = $state->getRetrieveDatabaseRecordsUsing();
 
-        if (! $callback) {
+        if (!$callback) {
             throw new \RuntimeException('No callback set to retrieve database records');
         }
 
@@ -94,7 +104,7 @@ abstract class Searcher implements SearcherInterface
     {
         $sort = $criteria->sort;
 
-        if ($criteria->sortIsDefault && ! empty($state->getDefaultSort())) {
+        if ($criteria->sortIsDefault && !empty($state->getDefaultSort())) {
             $sort = $state->getDefaultSort();
         }
 

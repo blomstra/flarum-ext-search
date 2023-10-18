@@ -1,5 +1,15 @@
 <?php
 
+/*
+ * This file is part of blomstra/search.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Search;
 
 use Blomstra\Search\Exceptions\IndexingException;
@@ -29,8 +39,8 @@ class ElasticIndex
                 [
                     'index' => [
                         '_index' => $index,
-                        '_id' => $document->id
-                    ]
+                        '_id'    => $document->id,
+                    ],
                 ],
                 $document->toArray(),
             ];
@@ -55,8 +65,8 @@ class ElasticIndex
                 [
                     'delete' => [
                         '_index' => $index(),
-                        '_id' => $model->id
-                    ]
+                        '_id'    => $model->id,
+                    ],
                 ],
             ];
         })->flatten(1);

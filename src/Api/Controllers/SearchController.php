@@ -12,6 +12,7 @@
 
 namespace Blomstra\Search\Api\Controllers;
 
+use Blomstra\Search\Elasticsearch\Builder;
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
 use Blomstra\Search\Elasticsearch\TermsQuery;
@@ -32,7 +33,6 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Psr\Http\Message\ServerRequestInterface;
-use Blomstra\Search\Elasticsearch\Builder;
 use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\Query;
 use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;

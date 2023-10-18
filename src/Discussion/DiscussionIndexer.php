@@ -1,5 +1,15 @@
 <?php
 
+/*
+ * This file is part of blomstra/search.
+ *
+ * Copyright (c) 2022 Blomstra Ltd.
+ *
+ * For the full copyright and license information, please view the LICENSE.md
+ * file that was distributed with this source code.
+ *
+ */
+
 namespace Blomstra\Search\Discussion;
 
 use Blomstra\Search\Save\Document;
@@ -34,12 +44,12 @@ class DiscussionIndexer implements IndexerInterface
         $this->elastic->delete(self::index(), $models);
     }
 
-    function build(): void
+    public function build(): void
     {
         $this->elastic->build(self::index(), $this->properties());
     }
 
-    function flush(): void
+    public function flush(): void
     {
         $this->elastic->flush(self::index());
     }
