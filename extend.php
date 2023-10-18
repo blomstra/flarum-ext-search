@@ -40,7 +40,7 @@ return [
     (new Flarum\SearchDriver(Search\ElasticSearchDriver::class))
         ->addSearcher(FlarumDiscussion::class, Discussion\DiscussionSearcher::class)
         ->addFilter(Discussion\DiscussionSearcher::class, Discussion\PrivateFilterMutator::class)
-//        ->addMutator(Discussion\DiscussionSearcher::class, Discussion\PrivateFilterMutator::mutate(...))
+        ->addMutator(Discussion\DiscussionSearcher::class, Discussion\PrivateFilterMutator::mutate(...))
         ->setFulltext(Discussion\DiscussionSearcher::class, Discussion\FulltextFilter::class),
 
     (new Flarum\SearchIndex())
