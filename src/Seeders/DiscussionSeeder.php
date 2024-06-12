@@ -88,8 +88,14 @@ class DiscussionSeeder extends Seeder
         }
 
         if ($this->extensionEnabled('fof-byobu')) {
-            $document['recipient_users'] = $model->recipientUsers->pluck('id')->toArray();
-            $document['recipient_groups'] = $model->recipientGroups->pluck('id')->toArray();
+            $document['recipient_users'] = $model->recipientUsers
+                ->whereNull('removed_at')
+                ->pluck('id')
+                ->toArray();
+            $document['recipient_groups'] = $model->recipientGroups
+                ->whereNull('removed_at')
+                ->pluck('id')
+                ->toArray();
         }
 
         if ($this->extensionEnabled('flarum-sticky')) {

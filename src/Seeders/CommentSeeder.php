@@ -87,8 +87,14 @@ class CommentSeeder extends Seeder
         }
 
         if ($this->extensionEnabled('fof-byobu')) {
-            $document['recipient_users'] = $model->discussion->recipientUsers->pluck('id')->toArray();
-            $document['recipient_groups'] = $model->discussion->recipientGroups->pluck('id')->toArray();
+            $document['recipient_users'] = $model->discussion->recipientUsers
+                ->whereNull('removed_at')
+                ->pluck('id')
+                ->toArray();
+            $document['recipient_groups'] = $model->discussion->recipientGroups
+                ->whereNull('removed_at')
+                ->pluck('id')
+                ->toArray();
         }
 
         return $document;
