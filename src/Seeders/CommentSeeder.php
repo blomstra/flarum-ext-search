@@ -15,8 +15,7 @@ namespace Blomstra\Search\Seeders;
 use Blomstra\Search\Save\Document;
 use Flarum\Api\Serializer\PostSerializer;
 use Flarum\Post\CommentPost;
-use Flarum\Post\Event\Deleted;
-use Flarum\Post\Event\Posted;
+use Flarum\Post\Event as Core;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -49,14 +48,18 @@ class CommentSeeder extends Seeder
 
     public static function savingOn(Dispatcher $events, callable $callable)
     {
-        $events->listen(Posted::class, function (Posted $event) use ($callable) {
+        $events->listen([
+            Core\Posted::class,
+        ], function ($event) use ($callable) {
             $callable($event->post);
         });
     }
 
     public static function deletingOn(Dispatcher $events, callable $callable)
     {
-        $events->listen(Deleted::class, function (Deleted $event) use ($callable) {
+        $events->listen([
+            Core\Deleted::class
+        ], function ($event) use ($callable) {
             $callable($event->post);
         });
     }
