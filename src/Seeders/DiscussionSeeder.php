@@ -17,10 +17,14 @@ use Flarum\Api\Serializer\DiscussionSerializer;
 use Flarum\Discussion\Discussion;
 use Flarum\Discussion\Event as Core;
 use Flarum\Extension\ExtensionManager;
+use Flarum\Group\Group;
+use Flarum\Group\Permission;
+use Flarum\Tags\Tag;
 use FoF\Byobu\Events as Byobu;
 use FoF\DiscussionViews\Events\DiscussionWasViewed;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 
 class DiscussionSeeder extends Seeder
@@ -28,6 +32,16 @@ class DiscussionSeeder extends Seeder
     public function type(): string
     {
         return resolve(DiscussionSerializer::class)->getType(new Discussion());
+    }
+
+    public function joinRelation(): string
+    {
+        return 'discussion';
+    }
+
+    public function routing(Model $model): string
+    {
+        return (string) $model->id;
     }
 
     public function query(): Builder
@@ -99,7 +113,7 @@ class DiscussionSeeder extends Seeder
     public function toDocument(Model $model): Document
     {
         $document = new Document([
-            'type'            => $this->type(),
+            'join_field'      => $this->joinRelation(),
             'id'              => $this->type().':'.$model->id,
             'rawId'           => $model->id,
             'content'         => $model->title,
@@ -135,5 +149,41 @@ class DiscussionSeeder extends Seeder
         }
 
         return $document;
+    }
+
+    protected function groupsForDiscussion(Discussion $discussion): array
+    {
+        $permissions = collect();
+
+        $globalPermission = Permission::query()
+            ->where('permission', 'viewForum')
+            ->pluck('group_id');
+
+        if ($this->extensionEnabled('flarum-tags')) {
+            /** @var Collection $tags */
+            $tags = $discussion->tags;
+
+            $tagPermissions = Permission::query()
+                ->whereIn(
+                    'permission',
+                    $tags->pluck('id')->map(fn (int $id) => "tag$id.viewForum")
+                )->get();
+
+            $permissions = $tags->map(function (Tag $tag) use ($tagPermissions) {
+                $permissions = $tagPermissions->where('permission', "tag$tag->id.viewForum");
+
+                if ($tag->is_restricted) {
+                    $permissions = $permissions->add(['group_id' => Group::ADMINISTRATOR_ID]);
+                }
+
+                return $permissions->pluck('group_id');
+            })->flatten();
+        }
+
+        if (!$discussion->is_private && $permissions->isEmpty()) {
+            $permissions = $globalPermission;
+        }
+
+        return $permissions->toArray();
     }
 }

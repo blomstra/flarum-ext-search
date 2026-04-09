@@ -12,10 +12,12 @@
 
 namespace Blomstra\Search\Api\Controllers;
 
+use Blomstra\Search\Elasticsearch\HasChildQuery;
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
 use Blomstra\Search\Elasticsearch\TermsQuery;
-use Blomstra\Search\Save\Document as ElasticDocument;
+use Blomstra\Search\Searchers\CommentPostSearcher;
+use Blomstra\Search\Searchers\DiscussionSearcher;
 use Blomstra\Search\Searchers\Searcher;
 use Elasticsearch\Client;
 use Flarum\Api\Controller\ListDiscussionsController;
@@ -33,9 +35,9 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Log\LoggerInterface;
 use Spatie\ElasticsearchQueryBuilder\Builder;
 use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
-use Spatie\ElasticsearchQueryBuilder\Queries\Query;
 use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 use Spatie\ElasticsearchQueryBuilder\Sorts\Sort;
 use Tobscure\JsonApi\Document;
@@ -51,117 +53,100 @@ class SearchController extends ListDiscussionsController
         'view_count'   => 'view_count',
     ];
 
-    protected Collection $searchers;
     protected bool $matchSentences;
     protected bool $matchWords;
+    protected ?Searcher $discussionSearcher;
+    protected ?Searcher $postSearcher;
 
     public function __construct(protected Client $elastic, protected UrlGenerator $uri, Container $container, SettingsRepositoryInterface $settings)
     {
-        $this->searchers = $this->gatherSearchers($container->tagged('blomstra.search.searchers'));
-
         $this->matchSentences = true;
-        $this->matchWords = true;
-    }
+        $this->matchWords     = true;
 
-    protected function gatherSearchers(iterable $searchers)
-    {
-        return collect($searchers)
-            ->map(fn ($searcher) => new $searcher())
-            ->filter(fn (Searcher $searcher) => $searcher->enabled());
+        $searchers = collect($container->tagged('blomstra.search.searchers'));
+
+        $this->discussionSearcher = $searchers->first(fn ($s) => $s instanceof DiscussionSearcher);
+        $this->postSearcher       = $searchers->first(fn ($s) => $s instanceof CommentPostSearcher);
     }
 
     protected function data(ServerRequestInterface $request, Document $document)
     {
-        // Not used for now.
-        $type = Arr::get($request->getQueryParams(), 'type');
-
-        $actor = RequestUtil::getActor($request);
-
+        $actor   = RequestUtil::getActor($request);
         $filters = $this->extractFilter($request);
-
-        $search = $this->getSearch($filters);
-
-        $limit = $this->extractLimit($request);
-        $offset = $this->extractOffset($request);
-
+        $search  = $this->getSearch($filters);
+        $limit   = $this->extractLimit($request);
+        $offset  = $this->extractOffset($request);
         $include = array_merge($this->extractInclude($request), ['state']);
 
-        $filterQuery = BoolQuery::create();
+        $query = BoolQuery::create()
+            // Always restrict to discussion documents; posts are only searched via has_child.
+            ->add(TermQuery::create('join_field', 'discussion'), 'filter');
 
         if (!empty($search)) {
-            if ($this->matchSentences) {
-                $filterQuery->add($this->sentenceMatch($search));
-            }
-            if ($this->matchWords) {
-                $filterQuery->add($this->wordMatch($search, 'and'));
-            }
-            if ($this->matchWords) {
-                $filterQuery->add($this->wordMatch($search, 'or'));
-            }
+            $query->add($this->buildTextQuery($search, $actor));
         }
+
+        $this->addFilters($query, $actor, $filters);
 
         $builder = (new Builder($this->elastic))
             ->index(resolve('blomstra.search.elastic_index'))
             ->size($limit + 1)
-            ->from($this->extractOffset($request))
-            ->addQuery(
-                $this->addFilters($filterQuery, $actor, $filters)
-            );
+            ->from($offset)
+            ->addQuery($query);
 
         $knownSortFields = array_merge(array_values($this->translateSort), ['rawId']);
+        $logger          = resolve(LoggerInterface::class);
+
+        $phpSortField = null;
+        $phpSortDir   = 'desc';
 
         foreach ($this->extractSort($request) as $field => $direction) {
             $translated = $this->translateSort[$field] ?? $field;
 
             if (!in_array($translated, $knownSortFields)) {
-                resolve(\Psr\Log\LoggerInterface::class)->warning(
-                    "blomstra/search: unknown sort field \"{$field}\", ignoring."
-                );
+                $logger->warning("blomstra/search: unknown sort field \"{$field}\", ignoring.");
                 continue;
             }
 
             $builder->addSort(new Sort($translated, $direction));
+
+            if ($phpSortField === null && $translated !== 'rawId') {
+                $phpSortField = $translated;
+                $phpSortDir   = $direction;
+            }
         }
 
         $response = $builder->search();
 
         Discussion::setStateUser($actor);
 
-        // Eager load groups for use in the policies (isAdmin check)
         if (in_array('mostRelevantPost.user', $include)) {
             $include[] = 'mostRelevantPost.user.groups';
 
-            // If the first level of the relationship wasn't explicitly included,
-            // add it so the code below can look for it
             if (!in_array('mostRelevantPost', $include)) {
                 $include[] = 'mostRelevantPost';
             }
         }
 
-        // we need to retrieve all discussion ids and when the results are posts,
-        // their ids as most relevant post id
+        // All hits are discussion documents. Extract the best-matching post ID from
+        // inner_hits when a has_child clause matched (i.e. the match came from a post).
         $results = Collection::make(Arr::get($response, 'hits.hits'))
             ->map(function ($hit) {
-                $type = $hit['_source']['type'];
-                $id = Str::after($hit['_source']['id'], "$type:");
+                // _id is "discussions:123" — parse the numeric part directly.
+                $discussionId = Str::after($hit['_id'], 'discussions:');
 
-                if ($type === 'posts') {
-                    return [
-                        'most_relevant_post_id' => $id,
-                        'weight'                => Arr::get($hit, 'sort.0'),
-                    ];
-                } else {
-                    return [
-                        'discussion_id' => $id,
-                        'weight'        => Arr::get($hit, 'sort.0'),
-                    ];
-                }
+                // rawId on the inner hit gives us the integer post ID.
+                $bestPostId = Arr::get($hit, 'inner_hits.best_post.hits.hits.0._source.rawId');
+
+                return [
+                    'discussion_id'        => $discussionId,
+                    'most_relevant_post_id' => $bestPostId,
+                    'weight'               => Arr::get($hit, 'sort.0', Arr::get($hit, '_score', 0)),
+                ];
             });
 
         $document->addPaginationLinks(
-            $this->uri->to('api')->route('blomstra.search', [
-                'type' => 'discussions',
-            ]),
+            $this->uri->to('api')->route('blomstra.search', ['type' => 'discussions']),
             $request->getQueryParams(),
             $offset,
             $limit,
@@ -171,28 +156,25 @@ class SearchController extends ListDiscussionsController
         $results = $results->take($limit);
 
         $discussions = Discussion::query()
-            ->select('discussions.*')
-            ->join('posts', 'posts.discussion_id', 'discussions.id')
-            // Extra safety to prevent leaking hidden discussion (titles) towards search results.
-            ->when($actor->isGuest() || !$actor->hasPermission('discussion.hide'), fn ($query) => $query->whereNull('discussions.hidden_at'))
-            ->where(function ($query) use ($results) {
-                $query
-                    ->whereIn('discussions.id', $results->pluck('discussion_id')->filter())
-                    ->orWhereIn('posts.id', $results->pluck('most_relevant_post_id')->filter());
-            })
+            ->when(
+                $actor->isGuest() || !$actor->hasPermission('discussion.hide'),
+                fn ($q) => $q->whereNull('hidden_at')
+            )
+            ->whereIn('id', $results->pluck('discussion_id')->filter())
             ->get()
             ->each(function (Discussion $discussion) use ($results) {
-                if (in_array($discussion->id, $results->pluck('discussion_id')->toArray())) {
-                    $discussion->most_relevant_post_id = $discussion->first_post_id;
-                    $discussion->weight = $results->firstWhere('discussion_id', $discussion->id)['weight'] ?? 0;
-                } else {
-                    $post = $discussion->posts()->whereIn('id', $results->pluck('most_relevant_post_id'))->first();
-                    $discussion->most_relevant_post_id = $post?->id ?? $discussion->first_post_id;
-                    $discussion->weight = $results->firstWhere('most_relevant_post_id', $post?->id)['weight'] ?? 0;
-                }
+                $result = $results->firstWhere('discussion_id', $discussion->id);
+
+                $discussion->most_relevant_post_id = $result['most_relevant_post_id']
+                    ?? $discussion->first_post_id;
+                $discussion->weight = $result['weight'] ?? 0;
             })
             ->keyBy('id')
-            ->sortByDesc('weight')
+            ->when(
+                $phpSortField,
+                fn ($c) => $phpSortDir === 'desc' ? $c->sortByDesc($phpSortField) : $c->sortBy($phpSortField),
+                fn ($c) => $c->sortByDesc('weight')
+            )
             ->unique();
 
         $this->loadRelations($discussions, $include);
@@ -210,27 +192,63 @@ class SearchController extends ListDiscussionsController
         return $discussions;
     }
 
-    protected function getDocument(string $type): ?ElasticDocument
+    /**
+     * Build the text-matching portion of the query.
+     *
+     * Discussion titles are matched directly (filtered to join_field=discussion).
+     * Post bodies are matched via has_child with score_mode=sum so discussions
+     * with many matching posts score higher than those with a single strong match.
+     * inner_hits returns the best-scoring post for use as mostRelevantPost.
+     * Hidden posts are only included in matching for users with post.hide permission.
+     */
+    protected function buildTextQuery(string $search, User $actor): BoolQuery
     {
-        $documents = resolve(Container::class)->tagged('blomstra.search.documents');
+        $textQuery = BoolQuery::create();
 
-        return collect($documents)->first(function (ElasticDocument $document) use ($type) {
-            return $document->type() === $type;
-        });
+        if ($this->discussionSearcher?->enabled()) {
+            $textQuery->add($this->buildShouldClauses($search, $this->discussionSearcher->boost()), 'should');
+        }
+
+        if ($this->postSearcher?->enabled()) {
+            $postQuery = $this->buildShouldClauses($search, $this->postSearcher->boost());
+
+            // Guests and non-moderators may not see hidden posts; exclude them from child matching.
+            if ($actor->isGuest() || !$actor->hasPermission('post.hide')) {
+                $postQuery->add(TermQuery::create('is_hidden', false), 'filter');
+            }
+
+            $textQuery->add(
+                HasChildQuery::create('post', $postQuery)->withInnerHits(),
+                'should'
+            );
+        }
+
+        return $textQuery;
+    }
+
+    protected function buildShouldClauses(string $search, float $boost): BoolQuery
+    {
+        $should = BoolQuery::create();
+
+        if ($this->matchSentences) {
+            $should->add((new MatchPhraseQuery('content', $search))->boost(2 * $boost), 'should');
+        }
+        if ($this->matchWords) {
+            $should->add((new MatchQuery('content', $search))->operator('and')->boost(1.8 * $boost), 'should');
+            $should->add((new MatchQuery('content', $search))->operator('or')->boost(0.8 * $boost), 'should');
+        }
+
+        return $should;
     }
 
     protected function extensionEnabled(string $extension): bool
     {
-        /** @var ExtensionManager $manager */
-        $manager = resolve(ExtensionManager::class);
-
-        return $manager->isEnabled($extension);
+        return resolve(ExtensionManager::class)->isEnabled($extension);
     }
 
-    protected function addFilters(BoolQuery $query, User $actor, array $filters = []): BoolQuery
+    protected function addFilters(BoolQuery $query, User $actor, array $filters = []): void
     {
-        $groups = $this->getGroups($actor);
-
+        $groups      = $this->getGroups($actor);
         $onlyPrivate = Str::contains($filters['q'] ?? '', 'is:private');
 
         $subQuery = BoolQuery::create()
@@ -263,55 +281,12 @@ class SearchController extends ListDiscussionsController
             }
         }
 
-        $query->add(
-            $subQuery,
-            'filter'
-        );
-
-        return $query;
-    }
-
-    protected function boolQuery(Query $parent, float $boost = 1): Query
-    {
-        $bool = new BoolQuery();
-
-        /** @var Searcher $searcher */
-        foreach ($this->searchers as $searcher) {
-            $searcher = new $searcher();
-
-            $bool->add(
-                BoolQuery::create()
-                    ->add(TermQuery::create('type', $searcher->type()), 'filter')
-                    ->add(clone $parent->boost($boost * $searcher->boost())),
-                'should'
-            );
-        }
-
-        return $bool;
-    }
-
-    protected function sentenceMatch(string $q): Query
-    {
-        $query = (new MatchPhraseQuery('content', $q));
-
-        return $this->boolQuery($query, 2);
-    }
-
-    protected function wordMatch(string $q, string $operator = 'or'): Query
-    {
-        $query = (new MatchQuery('content', $q))
-            ->operator($operator);
-
-        $boost = $operator === 'and' ? 1.8 : .8;
-
-        return $this->boolQuery($query, $boost);
+        $query->add($subQuery, 'filter');
     }
 
     protected function getGroups(User $actor): Collection
     {
-        /** @var Collection $groups */
         $groups = $actor->groups->pluck('id');
-
         $groups->add(Group::GUEST_ID);
 
         if ($actor->is_email_confirmed) {
@@ -327,9 +302,7 @@ class SearchController extends ListDiscussionsController
 
         if ($search) {
             $q = collect(explode(' ', $search))
-                ->filter(function (string $part) {
-                    return $part !== 'is:private';
-                })
+                ->filter(fn (string $part) => $part !== 'is:private')
                 ->filter()
                 ->join(' ');
 

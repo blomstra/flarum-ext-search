@@ -13,11 +13,12 @@
 namespace Blomstra\Search\Save;
 
 use Carbon\Carbon;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Fluent;
 
 /**
- * @property string      $type
  * @property string      $id
+ * @property int         $rawId
  * @property string      $content
  * @property Carbon      $created_at
  * @property Carbon      $updated_at
@@ -30,4 +31,13 @@ use Illuminate\Support\Fluent;
  */
 class Document extends Fluent
 {
+    /**
+     * Exclude `id` from the body sent to Elasticsearch. The document ID is
+     * already stored as `_id` by the bulk API action; duplicating it in
+     * `_source` wastes space and is redundant.
+     */
+    public function toArray(): array
+    {
+        return Arr::except($this->attributes, ['id']);
+    }
 }

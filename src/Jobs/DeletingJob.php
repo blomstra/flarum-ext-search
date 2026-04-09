@@ -26,9 +26,10 @@ class DeletingJob extends Job
         // Preparing body for storing.
         $body = $this->models->map(function (Model $model) {
             $document = $this->seeder->toDocument($model);
+            $routing  = $this->seeder->routing($model);
 
             return [
-                ['delete' => ['_index' => $this->index, '_id' => $document->id]],
+                ['delete' => ['_index' => $this->index, '_id' => $document->id, 'routing' => $routing]],
             ];
         })->flatten(1);
 

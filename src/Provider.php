@@ -116,11 +116,9 @@ class Provider extends AbstractServiceProvider
                 $queue->pushOn(Job::$onQueue, new DeletingJob(Collection::make([$model]), $seeder));
             });
 
-            if (method_exists($seeder, 'viewingOn')) {
-                $seeder::viewingOn($events, function (int $discussionId) use ($queue) {
-                    $queue->pushOn(Job::$onQueue, new ViewsSearchJob($discussionId));
-                });
-            }
+            $seeder::viewingOn($events, function (int $discussionId) use ($queue) {
+                $queue->pushOn(Job::$onQueue, new ViewsSearchJob($discussionId));
+            });
         }
     }
 }

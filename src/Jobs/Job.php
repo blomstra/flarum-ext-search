@@ -22,9 +22,13 @@ abstract class Job extends AbstractJob
 
     public static ?string $onQueue = null;
 
-    public function __construct(protected Collection $models, protected Seeder $seeder)
+    /**
+     * @param string|null $targetIndex  Explicit index name for blue-green builds.
+     *                                  Defaults to the configured alias when null.
+     */
+    public function __construct(protected Collection $models, protected Seeder $seeder, ?string $targetIndex = null)
     {
-        $this->index = resolve('blomstra.search.elastic_index');
+        $this->index = $targetIndex ?? resolve('blomstra.search.elastic_index');
 
         if (static::$onQueue) {
             $this->onQueue(static::$onQueue);

@@ -28,9 +28,10 @@ class UpdateSearchJob extends Job
         // Preparing body for storing.
         $body = $this->models->map(function (Model $model) {
             $document = $this->seeder->toDocument($model);
+            $routing  = $this->seeder->routing($model);
 
             return [
-                ['index' => ['_index' => $this->index, '_id' => $document->id]],
+                ['index' => ['_index' => $this->index, '_id' => $document->id, 'routing' => $routing]],
                 $document->toArray(),
             ];
         })

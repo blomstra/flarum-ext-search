@@ -20,10 +20,12 @@ use Flarum\Queue\AbstractJob;
 class ViewsSearchJob extends AbstractJob
 {
     protected string $index;
+    protected string $documentType;
 
     public function __construct(protected int $discussionId)
     {
-        $this->index = resolve('blomstra.search.elastic_index');
+        $this->index        = resolve('blomstra.search.elastic_index');
+        $this->documentType = resolve(DiscussionSerializer::class)->getType(new Discussion());
 
         if (Job::$onQueue) {
             $this->onQueue(Job::$onQueue);
@@ -38,16 +40,20 @@ class ViewsSearchJob extends AbstractJob
             return;
         }
 
-        $type = resolve(DiscussionSerializer::class)->getType(new Discussion());
+        $type = $this->documentType;
 
-        $client->update([
-            'index'             => $this->index,
-            'id'                => "$type:{$this->discussionId}",
-            'retry_on_conflict' => 3,
-            'ignore'            => [404],
-            'body'              => [
-                'doc' => ['view_count' => (int) $discussion->view_count],
-            ],
-        ]);
+        try {
+            $client->update([
+                'index'             => $this->index,
+                'id'                => "$type:{$this->discussionId}",
+                'routing'           => (string) $this->discussionId,
+                'retry_on_conflict' => 3,
+                'body'              => [
+                    'doc' => ['view_count' => (int) $discussion->view_count],
+                ],
+            ]);
+        } catch (\Elasticsearch\Common\Exceptions\Missing404Exception $e) {
+            // Document not yet indexed; will be picked up on next --seed-missing or --recreate.
+        }
     }
 }

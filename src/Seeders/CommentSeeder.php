@@ -13,7 +13,9 @@
 namespace Blomstra\Search\Seeders;
 
 use Blomstra\Search\Save\Document;
+use Flarum\Api\Serializer\DiscussionSerializer;
 use Flarum\Api\Serializer\PostSerializer;
+use Flarum\Discussion\Discussion;
 use Flarum\Post\CommentPost;
 use Flarum\Post\Event as Core;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -27,30 +29,29 @@ class CommentSeeder extends Seeder
         return resolve(PostSerializer::class)->getType(new CommentPost());
     }
 
+    public function joinRelation(): string
+    {
+        return 'post';
+    }
+
+    public function routing(Model $model): string
+    {
+        return (string) $model->discussion_id;
+    }
+
     public function query(): Builder
     {
-        $includes = ['discussion'];
-
-        if ($this->extensionEnabled('flarum-tags')) {
-            $includes[] = 'discussion.tags';
-        }
-
-        if ($this->extensionEnabled('fof-byobu')) {
-            $includes[] = 'discussion.recipientUsers';
-            $includes[] = 'discussion.recipientGroups';
-        }
-
         return CommentPost::query()
-            ->whereNull('hidden_at')
-            ->where('type', CommentPost::$type)
-            ->with($includes);
+            ->where('type', CommentPost::$type);
     }
 
     public static function savingOn(Dispatcher $events, callable $callable)
     {
         $events->listen([
             Core\Posted::class,
-            Core\Revised::class
+            Core\Revised::class,
+            Core\Hidden::class,
+            Core\Restored::class,
         ], function ($event) use ($callable) {
             $callable($event->post);
         });
@@ -65,41 +66,31 @@ class CommentSeeder extends Seeder
         });
     }
 
+    /** Cached discussion type string (e.g. "discussions") — resolved once per job. */
+    private ?string $discussionType = null;
+
+    private function discussionType(): string
+    {
+        return $this->discussionType ??= resolve(DiscussionSerializer::class)->getType(new Discussion());
+    }
+
     /**
-     * @param CommentPost $model
+     * Post documents only need content for has_child matching and the join
+     * field to establish the parent-child relationship. All discussion-level
+     * fields (groups, tags, comment_count, etc.) live on the discussion
+     * document and are irrelevant here.
      *
-     * @return Document
+     * @param CommentPost $model
      */
     public function toDocument(Model $model): Document
     {
-        $document = new Document([
-            'type'            => $this->type(),
-            'id'              => $this->type().':'.$model->id,
-            'rawId'           => $model->id,
-            'content'         => $model->content,
-            'created_at'      => $model->created_at?->toAtomString(),
-            'updated_at'      => $model->edited_at?->toAtomString(),
-            'is_private'      => $model->is_private,
-            'user_id'         => $model->user_id,
-            'groups'          => $this->groupsForDiscussion($model->discussion),
-            'comment_count'   => $model->discussion->comment_count,
+        return new Document([
+            'join_field'    => ['name' => $this->joinRelation(), 'parent' => "{$this->discussionType()}:{$model->discussion_id}"],
+            'discussion_id' => $model->discussion_id,
+            'id'            => $this->type().':'.$model->id,
+            'rawId'         => $model->id,
+            'content'       => $model->content,
+            'is_hidden'     => $model->hidden_at !== null,
         ]);
-
-        if ($this->extensionEnabled('flarum-tags')) {
-            $document['tags'] = $model->discussion->tags->pluck('id')->toArray();
-        }
-
-        if ($this->extensionEnabled('fof-byobu')) {
-            $document['recipient_users'] = $model->discussion->recipientUsers
-                ->whereNull('removed_at')
-                ->pluck('id')
-                ->toArray();
-            $document['recipient_groups'] = $model->discussion->recipientGroups
-                ->whereNull('removed_at')
-                ->pluck('id')
-                ->toArray();
-        }
-
-        return $document;
     }
 }
