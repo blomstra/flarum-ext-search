@@ -142,6 +142,9 @@ class BuildCommand extends Command
             $seeded = null;
 
             while ($continueAt !== null) {
+                $rangeFrom = max(1, $continueAt - 1000);
+                $rangeTo   = $continueAt;
+
                 if ($this->option('seed-missing')) {
                     $response = (new Builder($client))
                         ->index($index)
@@ -149,8 +152,8 @@ class BuildCommand extends Command
                         ->addQuery(
                             (new BoolQuery())
                             ->add((new RangeQuery('rawId'))
-                                ->gte($continueAt - 1000)
-                                ->lte($continueAt))
+                                ->gte($rangeFrom)
+                                ->lte($rangeTo))
                             ->add(TermQuery::create('type', $seeder->type()))
                         )
                         ->search();
@@ -161,7 +164,7 @@ class BuildCommand extends Command
                 /** @var Collection $collection */
                 $collection = $seeder->query()
                     ->latest('id')
-                    ->whereBetween('id', [$continueAt - 1000, $continueAt])
+                    ->whereBetween('id', [$rangeFrom, $rangeTo])
                     ->when($this->option('max-id'), function ($query, $id) {
                         $query->where('id', '<=', $id);
                     })
@@ -169,11 +172,19 @@ class BuildCommand extends Command
                     ->get();
 
                 $min = $collection->min('id');
-                $continueAt = $min && $min > 2 ? $min - 1 : null;
 
-                $queue->pushOn(Job::$onQueue, new SavingJob($collection, $seeder));
+                if ($this->option('seed-missing') && $collection->isEmpty()) {
+                    // All docs in this range are already indexed; advance past the range bottom.
+                    $continueAt = $rangeFrom > 2 ? $rangeFrom - 1 : null;
+                } else {
+                    $continueAt = $min && $min > 2 ? $min - 1 : null;
+                }
 
-                $this->info("Pushed into the index, type: {$seeder->type()}, amount: {$collection->count()}.");
+                if ($collection->isNotEmpty()) {
+                    $queue->pushOn(Job::$onQueue, new SavingJob($collection, $seeder));
+                }
+
+                $this->info("IDs {$rangeFrom}–{$rangeTo} | type: {$seeder->type()} | queued: {$collection->count()}.");
 
                 $total += $collection->count();
 
@@ -188,7 +199,7 @@ class BuildCommand extends Command
                 }
             }
 
-            $this->info("Pushed a total of $total into the index.");
+            $this->info("Queued a total of $total {$seeder->type()} for indexing.");
         }
     }
 
