@@ -50,6 +50,7 @@ class CommentSeeder extends Seeder
     {
         $events->listen([
             Core\Posted::class,
+            Core\Revised::class
         ], function ($event) use ($callable) {
             $callable($event->post);
         });
