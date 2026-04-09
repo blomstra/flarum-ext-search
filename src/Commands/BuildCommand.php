@@ -87,7 +87,7 @@ class BuildCommand extends Command
                 'index' => $index,
                 'body'  => [
                     'settings' => [
-                        'index.max_ngram_diff' => 10,
+                        'index.max_ngram_diff' => 7,
                         'analysis'             => [
                             'analyzer' => [
                                 'flarum_analyzer' => [
@@ -105,7 +105,7 @@ class BuildCommand extends Command
                             'filter' => [
                                 'partial_search_filter' => [
                                     'type'        => 'ngram',
-                                    'min_gram'    => 1,
+                                    'min_gram'    => 3,
                                     'max_gram'    => 10,
                                     'token_chars' => ['letter', 'digit', 'symbol'],
                                 ],
