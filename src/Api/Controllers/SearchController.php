@@ -26,6 +26,7 @@ use Flarum\Group\Group;
 use Flarum\Http\RequestUtil;
 use Flarum\Http\UrlGenerator;
 use Flarum\Settings\SettingsRepositoryInterface;
+use Flarum\Tags\Tag;
 use Flarum\User\User;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Arr;
@@ -224,6 +225,14 @@ class SearchController extends ListDiscussionsController
         $subQuery = BoolQuery::create()
             ->add(TermQuery::create('is_private', 'false'))
             ->add(TermsQuery::create('groups', $groups->toArray()));
+
+        if ($this->extensionEnabled('flarum-tags') && !empty($filters['tag'])) {
+            $slugs  = is_array($filters['tag']) ? $filters['tag'] : explode(',', $filters['tag']);
+            $tagIds = Tag::query()->whereIn('slug', $slugs)->pluck('id')->toArray();
+            if (!empty($tagIds)) {
+                $query->add(TermsQuery::create('tags', $tagIds), 'filter');
+            }
+        }
 
         if ($this->extensionEnabled('fof-byobu') && $actor->exists) {
             $byobuQuery = BoolQuery::create()
