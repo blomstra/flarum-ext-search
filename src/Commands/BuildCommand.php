@@ -13,7 +13,7 @@
 namespace Blomstra\Search\Commands;
 
 use Blomstra\Search\Jobs\Job;
-use Blomstra\Search\Jobs\SavingJob;
+use Blomstra\Search\Jobs\UpdateSearchJob;
 use Blomstra\Search\Seeders\Seeder;
 use Elasticsearch\Client;
 use Flarum\Settings\SettingsRepositoryInterface;
@@ -71,6 +71,7 @@ class BuildCommand extends Command
                 'recipient_groups' => ['type' => 'integer'],
                 'recipient_users'  => ['type' => 'integer'],
                 'comment_count'    => ['type' => 'integer'],
+                'view_count'       => ['type' => 'integer'],
             ],
         ];
 
@@ -181,7 +182,7 @@ class BuildCommand extends Command
                 }
 
                 if ($collection->isNotEmpty()) {
-                    $queue->pushOn(Job::$onQueue, new SavingJob($collection, $seeder));
+                    $queue->pushOn(Job::$onQueue, new UpdateSearchJob($collection, $seeder));
                 }
 
                 $this->info("IDs {$rangeFrom}–{$rangeTo} | type: {$seeder->type()} | queued: {$collection->count()}.");

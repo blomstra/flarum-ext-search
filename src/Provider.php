@@ -14,7 +14,8 @@ namespace Blomstra\Search;
 
 use Blomstra\Search\Jobs\DeletingJob;
 use Blomstra\Search\Jobs\Job;
-use Blomstra\Search\Jobs\SavingJob;
+use Blomstra\Search\Jobs\UpdateSearchJob;
+use Blomstra\Search\Jobs\ViewsSearchJob;
 use Elasticsearch\Client as Elastic;
 use Elasticsearch\ClientBuilder;
 use Flarum\Api\Client;
@@ -108,12 +109,18 @@ class Provider extends AbstractServiceProvider
         /** @var string|Seeders\Seeder $seeder */
         foreach ($seeders as $seeder) {
             $seeder::savingOn($events, function ($model) use ($queue, $seeder) {
-                $queue->pushOn(Job::$onQueue, new SavingJob(Collection::make([$model]), $seeder));
+                $queue->pushOn(Job::$onQueue, new UpdateSearchJob(Collection::make([$model]), $seeder));
             });
 
             $seeder::deletingOn($events, function ($model) use ($queue, $seeder) {
                 $queue->pushOn(Job::$onQueue, new DeletingJob(Collection::make([$model]), $seeder));
             });
+
+            if (method_exists($seeder, 'viewingOn')) {
+                $seeder::viewingOn($events, function (int $discussionId) use ($queue) {
+                    $queue->pushOn(Job::$onQueue, new ViewsSearchJob($discussionId));
+                });
+            }
         }
     }
 }

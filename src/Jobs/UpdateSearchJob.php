@@ -17,7 +17,7 @@ use Elasticsearch\Client;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 
-class SavingJob extends Job
+class UpdateSearchJob extends Job
 {
     public function handle(Client $client)
     {

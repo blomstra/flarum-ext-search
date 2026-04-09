@@ -48,6 +48,7 @@ class SearchController extends ListDiscussionsController
         'lastPostedAt' => 'updated_at',
         'createdAt'    => 'created_at',
         'commentCount' => 'comment_count',
+        'view_count'   => 'view_count',
     ];
 
     protected Collection $searchers;
@@ -107,9 +108,19 @@ class SearchController extends ListDiscussionsController
                 $this->addFilters($filterQuery, $actor, $filters)
             );
 
+        $knownSortFields = array_merge(array_values($this->translateSort), ['rawId']);
+
         foreach ($this->extractSort($request) as $field => $direction) {
-            $field = $this->translateSort[$field] ?? $field;
-            $builder->addSort(new Sort($field, $direction));
+            $translated = $this->translateSort[$field] ?? $field;
+
+            if (!in_array($translated, $knownSortFields)) {
+                resolve(\Psr\Log\LoggerInterface::class)->warning(
+                    "blomstra/search: unknown sort field \"{$field}\", ignoring."
+                );
+                continue;
+            }
+
+            $builder->addSort(new Sort($translated, $direction));
         }
 
         $response = $builder->search();

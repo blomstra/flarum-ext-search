@@ -16,7 +16,9 @@ use Blomstra\Search\Save\Document;
 use Flarum\Api\Serializer\DiscussionSerializer;
 use Flarum\Discussion\Discussion;
 use Flarum\Discussion\Event as Core;
+use Flarum\Extension\ExtensionManager;
 use FoF\Byobu\Events as Byobu;
+use FoF\DiscussionViews\Events\DiscussionWasViewed;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -55,6 +57,27 @@ class DiscussionSeeder extends Seeder
             Byobu\DiscussionMadePublic::class, Byobu\RemovedSelf::class, Byobu\RecipientsChanged::class,
         ], function ($event) use ($callable) {
             return $callable($event->discussion);
+        });
+    }
+
+    public static function viewingOn(Dispatcher $events, callable $callable): void
+    {
+        if (!resolve(ExtensionManager::class)->isEnabled('fof-discussion-views')) {
+            return;
+        }
+
+        $events->listen(DiscussionWasViewed::class, function (DiscussionWasViewed $event) use ($callable) {
+            $viewCount = $event->discussion->view_count;
+
+            $shouldSync = match (true) {
+                $viewCount < 15  => true,
+                $viewCount < 100 => rand(1, 3) === 1,
+                default          => rand(1, 19) === 1,
+            };
+
+            if ($shouldSync) {
+                $callable($event->discussion->id);
+            }
         });
     }
 
@@ -105,6 +128,10 @@ class DiscussionSeeder extends Seeder
 
         if ($this->extensionEnabled('flarum-sticky')) {
             $document['is_sticky'] = (bool) $model->is_sticky;
+        }
+
+        if ($this->extensionEnabled('fof-discussion-views')) {
+            $document['view_count'] = (int) ($model->view_count ?? 0);
         }
 
         return $document;
