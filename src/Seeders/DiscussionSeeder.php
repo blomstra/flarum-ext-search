@@ -80,7 +80,6 @@ class DiscussionSeeder extends Seeder
             'id'              => $this->type().':'.$model->id,
             'rawId'           => $model->id,
             'content'         => $model->title,
-            'content_partial' => $model->title,
             'created_at'      => $model->created_at?->toAtomString(),
             'updated_at'      => $model->last_posted_at?->toAtomString(),
             'is_private'      => $model->is_private,

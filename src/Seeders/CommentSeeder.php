@@ -76,7 +76,6 @@ class CommentSeeder extends Seeder
             'id'              => $this->type().':'.$model->id,
             'rawId'           => $model->id,
             'content'         => $model->content,
-            'content_partial' => $model->content,
             'created_at'      => $model->created_at?->toAtomString(),
             'updated_at'      => $model->edited_at?->toAtomString(),
             'is_private'      => $model->is_private,
