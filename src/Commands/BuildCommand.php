@@ -35,6 +35,9 @@ class BuildCommand extends Command
      */
     public const INDEX_COMPAT_VERSION = 'v2';
 
+    /** Matches Flarum's Search::MIN_SEARCH_LEN — the default minimum query length. */
+    public const DEFAULT_MIN_SEARCH_LENGTH = 3;
+
     protected $signature = 'blomstra:search:index
         {action? : build | promote | rollback | discard | mapping | fill}
         {--fresh}
@@ -248,6 +251,7 @@ HELP;
         $settings->set('blomstra-search.active-index', $staging);
         $settings->set('blomstra-search.staging-index', null);
         $settings->set('blomstra-search.index-compatible', self::INDEX_COMPAT_VERSION);
+        $this->saveIndexedConfig($client, $settings, $staging);
     }
 
     protected function runRollback(Client $client, string $alias, SettingsRepositoryInterface $settings): void
@@ -274,6 +278,7 @@ HELP;
 
         $settings->set('blomstra-search.active-index', $backup);
         $settings->set('blomstra-search.backup-index', null);
+        $this->saveIndexedConfig($client, $settings, $backup);
     }
 
     protected function runDiscard(Client $client, SettingsRepositoryInterface $settings): void
@@ -416,13 +421,15 @@ HELP;
 
         $client->indices()->create([
             'index' => $concrete,
-            'body'  => ['settings' => $this->indexSettings($settings)],
+            'body'  => ['settings' => $this->buildIndexSettings($settings)],
         ]);
 
         $client->indices()->putAlias(['index' => $concrete, 'name' => $alias]);
 
         $settings->set('blomstra-search.active-index', $concrete);
         $settings->set('blomstra-search.index-compatible', self::INDEX_COMPAT_VERSION);
+
+        $this->saveIndexedConfig($client, $settings, $concrete);
 
         foreach ($seeders as $seeder) {
             $this->setContinueAt($settings, $seeder->type(), null);
@@ -466,7 +473,7 @@ HELP;
 
         $client->indices()->create([
             'index' => $staging,
-            'body'  => ['settings' => $this->indexSettings($settings)],
+            'body'  => ['settings' => $this->buildIndexSettings($settings)],
         ]);
 
         $settings->set('blomstra-search.staging-index', $staging);
@@ -480,14 +487,40 @@ HELP;
         return $staging;
     }
 
-    protected function indexSettings(SettingsRepositoryInterface $settings): array
+    /**
+     * Persist the analysis config that is actually live in ES for the given index.
+     * Reading from ES (rather than from Flarum settings) means rollbacks are also
+     * covered: the stored values always reflect the index that is currently aliased,
+     * not the settings at the time the command ran.
+     */
+    protected function saveIndexedConfig(Client $client, SettingsRepositoryInterface $settings, string $indexName): void
     {
+        $response = $client->indices()->getSettings(['index' => $indexName]);
+        $analysis = Arr::get($response, "$indexName.settings.index.analysis", []);
+
+        $analyzer = Arr::get($analysis, 'analyzer.flarum_analyzer.type', 'english');
+        $minGram  = (int) Arr::get($analysis, 'filter.partial_search_filter.min_gram', self::DEFAULT_MIN_SEARCH_LENGTH);
+
+        $settings->set('blomstra-search.indexed-analyzer', $analyzer);
+        $settings->set('blomstra-search.indexed-min-search-length', $minGram);
+    }
+
+    protected function buildIndexSettings(SettingsRepositoryInterface $settings): array
+    {
+        $language = $settings->get('blomstra-search.analyzer-language') ?: 'english';
+        $minGram  = max(1, (int) ($settings->get('blomstra-search.min-search-length') ?: self::DEFAULT_MIN_SEARCH_LENGTH));
+        $maxGram  = 10;
+
+        if ($minGram >= $maxGram) {
+            throw new \InvalidArgumentException("min_gram ($minGram) must be less than max_gram ($maxGram).");
+        }
+
         return [
-            'index.max_ngram_diff' => 7,
+            'index.max_ngram_diff' => $maxGram - $minGram,
             'analysis'             => [
                 'analyzer' => [
                     'flarum_analyzer' => [
-                        'type' => $settings->get('blomstra-search.analyzer-language') ?: 'english',
+                        'type' => $language,
                     ],
                     'flarum_analyzer_partial' => [
                         'type'      => 'custom',
@@ -498,8 +531,8 @@ HELP;
                 'filter' => [
                     'partial_search_filter' => [
                         'type'        => 'ngram',
-                        'min_gram'    => 3,
-                        'max_gram'    => 10,
+                        'min_gram'    => $minGram,
+                        'max_gram'    => $maxGram,
                         'token_chars' => ['letter', 'digit', 'symbol'],
                     ],
                 ],

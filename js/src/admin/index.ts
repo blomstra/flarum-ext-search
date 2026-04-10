@@ -78,6 +78,25 @@ app.initializers.add('blomstra-search', () => {
 
   app.extensionData
     .for('blomstra-search')
+    .registerSetting(function (this: any) {
+      // No index yet, or first build predates this tracking — stay silent.
+      const indexedAnalyzer = app.data.settings['blomstra-search.indexed-analyzer'];
+      if (!activeIndex || !indexedAnalyzer) return null;
+
+      const currentAnalyzer = this.setting('blomstra-search.analyzer-language')() || 'english';
+      const currentMinLength = this.setting('blomstra-search.min-search-length')();
+      const indexedMinLength = String(
+        app.data.settings['blomstra-search.indexed-min-search-length'] || app.data.settings['blomstra-search.min-search-length']
+      );
+
+      if (currentAnalyzer === indexedAnalyzer && currentMinLength === indexedMinLength) return null;
+
+      return m(
+        Alert,
+        { type: 'warning', dismissible: false, icon: 'fas fa-exclamation-triangle' },
+        app.translator.trans('blomstra-search.admin.index-settings-changed')
+      );
+    })
     .registerSetting({
       setting: 'blomstra-search.elastic-endpoint',
       label: app.translator.trans('blomstra-search.admin.elastic-endpoint'),
@@ -116,5 +135,13 @@ app.initializers.add('blomstra-search', () => {
       setting: 'blomstra-search.search-post-bodies',
       label: app.translator.trans('blomstra-search.admin.search-post-bodies'),
       type: 'switch',
+    })
+    .registerSetting({
+      setting: 'blomstra-search.min-search-length',
+      label: app.translator.trans('blomstra-search.admin.min-search-length.label'),
+      help: app.translator.trans('blomstra-search.admin.min-search-length.help'),
+      type: 'select',
+      options: { '1': '1', '2': '2', '3': '3', '4': '4' },
+      default: app.data.settings['blomstra-search.min-search-length'],
     });
 });
