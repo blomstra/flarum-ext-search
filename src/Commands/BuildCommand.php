@@ -30,19 +30,18 @@ use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 class BuildCommand extends Command
 {
     protected $signature = 'blomstra:search:index
-        {--max-id= : Limits for each object the number of items to seed}
-        {--throttle= : Number of seconds to wait between pushing to the queue}
-        {--only= : type to run seeder for, eg discussions or posts}
-        {--recreate : Build into a new timestamped pending index (never touches the live alias)}
-        {--discard : With --recreate, discard any in-progress pending build and start completely fresh}
-        {--build-only : Deprecated no-op; --recreate no longer auto-swaps (kept for scripting compatibility)}
-        {--mapping : Push updated mapping to the active index without rebuilding}
-        {--continue : Resume each seeder from where it left off (use with --recreate when resuming an interrupted build)}
-        {--seed-missing : Seed only documents missing from the active index}
-        {--swap : Atomically swap the alias from the active index to the completed pending index}
-        {--i-am-sure : Required with --swap; confirms the queue is fully drained before promoting}';
+        {action? : build | promote | rollback | discard | mapping | fill}
+        {--fresh : With build: drop the staging index and start completely fresh}
+        {--resume : With build: continue from where an interrupted build left off}
+        {--keep-backup : With promote: retain the replaced live index as a backup for rollback}
+        {--pending : With discard: drop the staging index}
+        {--backup : With discard: drop the backup index}
+        {--only= : Seed only this document type (e.g. discussions or posts)}
+        {--max-id= : Limit seeding to IDs up to this value}
+        {--throttle= : Seconds to wait between batches}
+        {--i-am-sure : Skip the promote confirmation prompt (for scripts/CI)}';
 
-    protected $description = 'Rebuilds the complete search index.';
+    protected $description = 'Build and manage the Elasticsearch search index.';
 
     public function handle(Container $container): void
     {
@@ -55,60 +54,229 @@ class BuildCommand extends Command
         /** @var string $alias */
         $alias = $container->make('blomstra.search.elastic_index');
 
-        // --swap: promote the pending index to live, nothing else.
-        if ($this->option('swap')) {
-            if (!$this->option('i-am-sure')) {
-                $this->warn('--swap promotes the pending index to live. This cannot be undone.');
-                $this->line('');
-                $this->line('Before swapping, ensure the queue is fully drained:');
-                $this->line('  php flarum queue:work --stop-when-empty');
-                $this->line('');
-
-                if (!$this->confirm('Has the queue been drained? Proceed with the swap?')) {
-                    return;
-                }
-            }
-
-            $this->performSwap($client, $alias, $settings);
+        if (!$this->argument('action')) {
+            $this->call('help', ['command_name' => $this->getName()]);
             return;
         }
 
-        /** @var Queue $queue */
-        $queue = $container->make(Queue::class);
+        switch ($this->argument('action')) {
+            case 'build':
+                $this->runBuild($client, $alias, $settings, $container);
+                break;
 
+            case 'promote':
+                $this->runPromote($client, $alias, $settings);
+                break;
+
+            case 'rollback':
+                $this->runRollback($client, $alias, $settings);
+                break;
+
+            case 'discard':
+                $this->runDiscard($client, $settings);
+                break;
+
+            case 'mapping':
+                $client->indices()->putMapping([
+                    'index' => $alias,
+                    'body'  => $this->mappingProperties(),
+                ]);
+                $this->info('Mapping updated on live index.');
+                break;
+
+            case 'fill':
+                $this->runSeeders(
+                    collect($container->tagged('blomstra.search.seeders')),
+                    $container->make(Queue::class),
+                    $client,
+                    $settings,
+                    $alias,
+                    seedMissing: true
+                );
+                break;
+
+            default:
+                $this->error("Unknown action '{$this->argument('action')}'. Valid actions: build, promote, rollback, discard, mapping, fill.");
+        }
+    }
+
+    protected function runBuild(Client $client, string $alias, SettingsRepositoryInterface $settings, Container $container): void
+    {
         /** @var Seeder[] $seeders */
         $seeders = collect($container->tagged('blomstra.search.seeders'));
 
-        // Determine which concrete index to write into.
-        if ($this->option('recreate')) {
-            // If a pending build exists, require an explicit choice before touching anything.
-            $pending = $settings->get('blomstra-search.pending-index');
-            if ($pending && $client->indices()->exists(['index' => $pending])
-                && !$this->option('continue') && !$this->option('discard')
-            ) {
-                $this->warn("An in-progress build already exists: $pending");
-                $this->line('');
-                $this->line('Choose one of:');
-                $this->line('  --recreate --continue   Resume each seeder from where it left off');
-                $this->line('  --recreate --discard    Discard this build and start completely fresh');
+        // Guard: staging build exists without explicit intent given.
+        $staging = $settings->get('blomstra-search.staging-index');
+        if ($staging && $client->indices()->exists(['index' => $staging])
+            && !$this->option('resume') && !$this->option('fresh')
+        ) {
+            $this->warn("An in-progress build already exists: $staging");
+            $this->line('');
+            $this->line('Choose one of:');
+            $this->line('  blomstra:search:index build --resume   Continue from where it left off');
+            $this->line('  blomstra:search:index build --fresh    Drop this build and start completely fresh');
+            return;
+        }
+
+        $aliasExists = (bool) $client->indices()->existsAlias(['name' => $alias]);
+        $indexExists = !$aliasExists && (bool) $client->indices()->exists(['index' => $alias]);
+
+        if (!$aliasExists && !$indexExists) {
+            // First install: create a timestamped index, alias it immediately, seed live.
+            $targetIndex  = $this->prepareFirstInstall($client, $alias, $settings, $seeders);
+            $stagingBuild = false;
+        } else {
+            // Live system: build into a staging index without touching the live alias.
+            $targetIndex  = $this->prepareStagingIndex($client, $alias, $settings, $seeders);
+            $stagingBuild = true;
+        }
+
+        $client->indices()->putMapping([
+            'index' => $targetIndex,
+            'body'  => $this->mappingProperties(),
+        ]);
+
+        $this->runSeeders($seeders, $container->make(Queue::class), $client, $settings, $targetIndex);
+
+        if ($stagingBuild) {
+            $staging = $settings->get('blomstra-search.staging-index');
+            $this->info("Build complete. Drain the queue, then promote '$staging' to live:");
+            $this->line('  php flarum queue:work --stop-when-empty');
+            $this->line('  php flarum blomstra:search:index promote');
+            $this->line('  php flarum blomstra:search:index promote --keep-backup  # retain old index for rollback');
+        }
+    }
+
+    protected function runPromote(Client $client, string $alias, SettingsRepositoryInterface $settings): void
+    {
+        if (!$this->option('i-am-sure')) {
+            $this->warn('promote switches the live index. Ensure all queued jobs have finished first:');
+            $this->line('  php flarum queue:work --stop-when-empty');
+            $this->line('');
+
+            if (!$this->confirm('Queue drained? Proceed?')) {
                 return;
             }
-
-            $targetIndex = $this->preparePendingIndex($client, $alias, $settings, $seeders);
-        } else {
-            // --mapping / --seed-missing / normal: write directly through the alias.
-            $targetIndex = $alias;
         }
 
-        // Apply or update the mapping.
-        if ($this->option('recreate') || $this->option('mapping')) {
-            $client->indices()->putMapping([
-                'index' => $targetIndex,
-                'body'  => $this->mappingProperties(),
+        $staging = $settings->get('blomstra-search.staging-index');
+
+        if (!$staging || !$client->indices()->exists(['index' => $staging])) {
+            $this->error('No staging index ready to promote. Run: blomstra:search:index build');
+            return;
+        }
+
+        $aliasExists = (bool) $client->indices()->existsAlias(['name' => $alias]);
+        $indexExists = !$aliasExists && (bool) $client->indices()->exists(['index' => $alias]);
+
+        if ($aliasExists) {
+            $result      = $client->indices()->getAlias(['name' => $alias]);
+            $activeIndex = array_key_first($result);
+
+            $client->indices()->updateAliases([
+                'body' => ['actions' => [
+                    ['remove' => ['index' => $activeIndex, 'alias' => $alias]],
+                    ['add'    => ['index' => $staging,     'alias' => $alias]],
+                ]],
             ]);
+
+            $this->info("'$alias' now points to '$staging'. Promote complete.");
+
+            if ($this->option('keep-backup')) {
+                $settings->set('blomstra-search.backup-index', $activeIndex);
+                $this->info("Kept '$activeIndex' as backup — run rollback to revert, discard --backup to drop it.");
+            } else {
+                $client->indices()->delete(['index' => $activeIndex, 'ignore_unavailable' => true]);
+                $this->info("Deleted old index: $activeIndex");
+            }
+        } else {
+            // One-time migration: concrete index → alias (legacy installs only).
+            if ($indexExists) {
+                $client->indices()->delete(['index' => $alias]);
+                $this->info("Deleted legacy concrete index: $alias");
+            }
+
+            $client->indices()->putAlias(['index' => $staging, 'name' => $alias]);
+            $this->info("'$alias' now points to '$staging'. Promote complete.");
         }
 
-        // Run seeders into $targetIndex.
+        $settings->set('blomstra-search.active-index', $staging);
+        $settings->set('blomstra-search.staging-index', null);
+    }
+
+    protected function runRollback(Client $client, string $alias, SettingsRepositoryInterface $settings): void
+    {
+        $backup = $settings->get('blomstra-search.backup-index');
+
+        if (!$backup || !$client->indices()->exists(['index' => $backup])) {
+            $this->error('No backup index to roll back to. Was promote run with --keep-backup?');
+            return;
+        }
+
+        $result      = $client->indices()->getAlias(['name' => $alias]);
+        $activeIndex = array_key_first($result);
+
+        $client->indices()->updateAliases([
+            'body' => ['actions' => [
+                ['remove' => ['index' => $activeIndex, 'alias' => $alias]],
+                ['add'    => ['index' => $backup,      'alias' => $alias]],
+            ]],
+        ]);
+
+        $client->indices()->delete(['index' => $activeIndex, 'ignore_unavailable' => true]);
+        $this->info("Rolled back: '$alias' now points to '$backup'. Deleted '$activeIndex'.");
+
+        $settings->set('blomstra-search.active-index', $backup);
+        $settings->set('blomstra-search.backup-index', null);
+    }
+
+    protected function runDiscard(Client $client, SettingsRepositoryInterface $settings): void
+    {
+        $pending = $this->option('pending');
+        $backup  = $this->option('backup');
+
+        if (!$pending && !$backup) {
+            $this->error('Specify what to discard: --pending (staging build) or --backup (rollback index).');
+            return;
+        }
+
+        if ($pending) {
+            $staging = $settings->get('blomstra-search.staging-index');
+
+            if (!$staging) {
+                $this->warn('No staging index to discard.');
+            } else {
+                if ($client->indices()->exists(['index' => $staging])) {
+                    $client->indices()->delete(['index' => $staging]);
+                }
+                $settings->set('blomstra-search.staging-index', null);
+                $this->info("Discarded staging index: $staging");
+            }
+        }
+
+        if ($backup) {
+            $backupIndex = $settings->get('blomstra-search.backup-index');
+
+            if (!$backupIndex) {
+                $this->warn('No backup index to discard.');
+            } else {
+                if ($client->indices()->exists(['index' => $backupIndex])) {
+                    $client->indices()->delete(['index' => $backupIndex]);
+                }
+                $settings->set('blomstra-search.backup-index', null);
+                $this->info("Discarded backup index: $backupIndex");
+            }
+        }
+    }
+
+    protected function runSeeders(
+        iterable $seeders,
+        Queue $queue,
+        Client $client,
+        SettingsRepositoryInterface $settings,
+        string $targetIndex,
+        bool $seedMissing = false
+    ): void {
         $only = $this->option('only');
 
         /** @var Seeder $seeder */
@@ -119,9 +287,18 @@ class BuildCommand extends Command
 
             $total = 0;
 
-            $continueAt = $this->option('continue')
-                ? ($this->getContinueAt($settings, $seeder->type()) ?? $seeder->query()->max('id'))
-                : $seeder->query()->max('id');
+            if ($this->option('resume')) {
+                $saved = $this->getContinueAt($settings, $seeder->type());
+
+                if ($saved === 0) {
+                    $this->info("Seeder '{$seeder->type()}' already completed in a previous run, skipping.");
+                    continue;
+                }
+
+                $continueAt = $saved ?? $seeder->query()->max('id');
+            } else {
+                $continueAt = $seeder->query()->max('id');
+            }
 
             $seeded = null;
 
@@ -129,7 +306,7 @@ class BuildCommand extends Command
                 $rangeFrom = max(1, $continueAt - 1000);
                 $rangeTo   = $continueAt;
 
-                if ($this->option('seed-missing')) {
+                if ($seedMissing) {
                     $response = (new Builder($client))
                         ->index($targetIndex)
                         ->size(1000)
@@ -153,7 +330,7 @@ class BuildCommand extends Command
 
                 $min = $collection->min('id');
 
-                if ($this->option('seed-missing') && $collection->isEmpty()) {
+                if ($seedMissing && $collection->isEmpty()) {
                     $continueAt = $rangeFrom > 2 ? $rangeFrom - 1 : null;
                 } else {
                     $continueAt = $min && $min > 2 ? $min - 1 : null;
@@ -174,114 +351,86 @@ class BuildCommand extends Command
                 }
             }
 
+            $this->setContinueAt($settings, $seeder->type(), 0);
             $this->info("Queued a total of $total {$seeder->type()} for indexing.");
-        }
-
-        if ($this->option('recreate')) {
-            $this->info("Build complete. Drain the queue, then promote '$targetIndex' to live:");
-            $this->line("  php flarum queue:work --stop-when-empty");
-            $this->line("  php flarum blomstra:search:index --swap");
         }
     }
 
     /**
-     * Prepare the concrete index that the current build will write into.
-     *
-     * - If a pending build exists and --discard is not set, resume it.
-     * - Otherwise create a fresh timestamped index and save it as pending.
+     * First install: create a timestamped concrete index, alias the configured name to it
+     * immediately, and return the alias so seeding goes through it and is live from the start.
      */
-    protected function preparePendingIndex(
+    protected function prepareFirstInstall(
         Client $client,
         string $alias,
         SettingsRepositoryInterface $settings,
         iterable $seeders
     ): string {
-        $pending = $settings->get('blomstra-search.pending-index');
-
-        // --discard: throw away any in-progress build.
-        if ($this->option('discard') && $pending) {
-            if ($client->indices()->exists(['index' => $pending])) {
-                $client->indices()->delete(['index' => $pending]);
-                $this->info("Discarded pending index: $pending");
-            }
-            $pending = null;
-            $settings->set('blomstra-search.pending-index', null);
-        }
-
-        // Resume an existing pending build (only reached when --continue or --discard was specified).
-        if ($pending && $client->indices()->exists(['index' => $pending])) {
-            $this->info("Resuming pending index build: $pending");
-            return $pending;
-        }
-
-        // Fresh build: create a new timestamped concrete index.
-        $pending = $alias . '_' . date('YmdHis');
+        $concrete = $alias . '_' . date('YmdHis');
 
         $client->indices()->create([
-            'index' => $pending,
+            'index' => $concrete,
             'body'  => ['settings' => $this->indexSettings($settings)],
         ]);
 
-        $settings->set('blomstra-search.pending-index', $pending);
+        $client->indices()->putAlias(['index' => $concrete, 'name' => $alias]);
 
-        // Clear per-seeder progress so the fresh build starts from the top.
+        $settings->set('blomstra-search.active-index', $concrete);
+
         foreach ($seeders as $seeder) {
             $this->setContinueAt($settings, $seeder->type(), null);
         }
 
-        $this->info("Created pending index: $pending");
+        $this->info("Created '$concrete', aliased '$alias' → '$concrete'.");
+        $this->info("Index is live — documents become searchable as the queue processes.");
 
-        return $pending;
+        return $alias;
     }
 
     /**
-     * Atomically promote the pending index to live by swapping the alias.
+     * Prepare the staging index for a blue-green build.
      *
-     * Handles both the normal alias-swap case and the one-time migration from
-     * an older installation where the configured name was a concrete index.
+     * - If a staging build exists and --fresh is not set, resume it.
+     * - Otherwise create a fresh timestamped index and save it as staging.
      */
-    protected function performSwap(Client $client, string $alias, SettingsRepositoryInterface $settings): void
-    {
-        $pending = $settings->get('blomstra-search.pending-index');
+    protected function prepareStagingIndex(
+        Client $client,
+        string $alias,
+        SettingsRepositoryInterface $settings,
+        iterable $seeders
+    ): string {
+        $staging = $settings->get('blomstra-search.staging-index');
 
-        if (!$pending || !$client->indices()->exists(['index' => $pending])) {
-            $this->error('No pending index found. Run --recreate [--build-only] first.');
-            return;
-        }
-
-        $aliasExists = (bool) $client->indices()->existsAlias(['name' => $alias]);
-        $indexExists = !$aliasExists && (bool) $client->indices()->exists(['index' => $alias]);
-
-        if ($aliasExists) {
-            // Normal case: atomic remove-old / add-new in a single API call.
-            $result   = $client->indices()->getAlias(['name' => $alias]);
-            $oldIndex = array_key_first($result);
-
-            $client->indices()->updateAliases([
-                'body' => ['actions' => [
-                    ['remove' => ['index' => $oldIndex, 'alias' => $alias]],
-                    ['add'    => ['index' => $pending,  'alias' => $alias]],
-                ]],
-            ]);
-
-            $this->info("Alias '$alias' → '$pending'. Swap complete.");
-            $client->indices()->delete(['index' => $oldIndex, 'ignore_unavailable' => true]);
-            $this->info("Deleted old index: $oldIndex");
-        } else {
-            // One-time migration: the configured name was a concrete index (old install).
-            // Brief downtime window here is acceptable — it only happens once.
-            if ($indexExists) {
-                $client->indices()->delete(['index' => $alias]);
-                $this->info("Deleted legacy concrete index: $alias");
+        if ($this->option('fresh') && $staging) {
+            if ($client->indices()->exists(['index' => $staging])) {
+                $client->indices()->delete(['index' => $staging]);
+                $this->info("Dropped staging index: $staging");
             }
-
-            $client->indices()->putAlias(['index' => $pending, 'name' => $alias]);
+            $staging = null;
+            $settings->set('blomstra-search.staging-index', null);
         }
 
-        $settings->set('blomstra-search.active-index', $pending);
-        $settings->set('blomstra-search.pending-index', null);
+        if ($staging && $client->indices()->exists(['index' => $staging])) {
+            $this->info("Resuming staging index build: $staging");
+            return $staging;
+        }
 
-        $this->info("Alias '$alias' → '$pending'. Swap complete.");
+        $staging = $alias . '_' . date('YmdHis');
+
+        $client->indices()->create([
+            'index' => $staging,
+            'body'  => ['settings' => $this->indexSettings($settings)],
+        ]);
+
+        $settings->set('blomstra-search.staging-index', $staging);
+
+        foreach ($seeders as $seeder) {
+            $this->setContinueAt($settings, $seeder->type(), null);
+        }
+
+        $this->info("Created staging index: $staging");
+
+        return $staging;
     }
 
     protected function indexSettings(SettingsRepositoryInterface $settings): array
