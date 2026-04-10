@@ -39,32 +39,46 @@ php flarum queue:work
 When you need to rebuild the full index (e.g. after a mapping change):
 
 ```bash
-# 1. Build into a staging index — live index is untouched
+# Simple rebuild — promotes automatically once all jobs are queued
 php flarum blomstra:search:index build
 
-# 2. Drain the queue
-php flarum queue:work --stop-when-empty
-
-# 3a. Promote the new index to live
-php flarum blomstra:search:index promote
-# 3b: promote but keep the old index as a backup for rollback
-php flarum blomstra:search:index promote --keep-backup
-
-# 4. Add content added between 'build' and 'promote'
-php flarum blomstra:search:index fill 
-
+# Or keep a backup of the old index in case you need to roll back
+php flarum blomstra:search:index build --keep-backup
 ```
 
-If you kept the backup and want to roll back:
+After the queue drains, fill any gaps from content posted during the build:
+
+```bash
+php flarum blomstra:search:index fill
+```
+
+If you kept a backup and want to roll back:
 
 ```bash
 php flarum blomstra:search:index rollback
 ```
 
-Once you are satisfied with the new index, drop the backup:
+Once satisfied with the new index, drop the backup:
 
 ```bash
 php flarum blomstra:search:index discard --backup
+```
+
+### Blue-green rebuild (manual promotion)
+
+Use `--staging` to keep the old index live until you explicitly promote:
+
+```bash
+# 1. Build into a staging index — live index is untouched
+php flarum blomstra:search:index build --staging
+
+# 2. Drain the queue
+php flarum queue:work --stop-when-empty
+
+# 3. Promote the staging index to live
+php flarum blomstra:search:index promote
+# Or keep the old index as a backup:
+php flarum blomstra:search:index promote --keep-backup
 ```
 
 ### Resuming or cancelling an interrupted build
@@ -102,14 +116,16 @@ php flarum blomstra:search:index mapping
 
 | Command | Description |
 |---|---|
-| `build` | Build into a new timestamped staging index. On first install, aliases it immediately so search is live during seeding. On subsequent runs, use `promote` when the queue is drained. |
+| `build` | Rebuild the index and promote automatically once all jobs are queued. On first install, aliases immediately so search is live during seeding. |
+| `build --keep-backup` | Rebuild and promote, retaining the old index as a backup for rollback. |
+| `build --staging` | Build into a staging index without promoting — use `promote` when ready (blue-green workflow). |
 | `build --resume` | Resume an interrupted build from where each seeder left off. |
 | `build --fresh` | Drop the staging index and start completely fresh. |
-| `promote` | Atomically swap the alias from the live index to the completed staging index. Prompts for confirmation. |
+| `promote` | Atomically swap the alias to the staging index. Prompts for confirmation (blue-green workflow). |
 | `promote --keep-backup` | Promote and retain the replaced live index as a backup for rollback. |
-| `rollback` | Restore the backup index to live (after `promote --keep-backup`). Deletes the index that was live. |
+| `rollback` | Restore the backup index to live. Deletes the index that was live. |
 | `discard --pending` | Drop the staging index without promoting (cancels an in-progress build). |
-| `discard --backup` | Drop the backup index (cleanup after `promote --keep-backup`). |
+| `discard --backup` | Drop the backup index (cleanup after `--keep-backup`). |
 | `mapping` | Push updated mapping to the live index without rebuilding or reseeding. |
 | `fill` | Seed only documents missing from the live index. |
 | `build --only=discussions` | Seed only the specified document type (`discussions` or `posts`). |

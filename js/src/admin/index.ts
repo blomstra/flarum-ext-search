@@ -1,6 +1,36 @@
 import app from 'flarum/admin/app';
+import { extend } from 'flarum/common/extend';
+import DashboardPage from 'flarum/admin/components/DashboardPage';
+import DashboardWidget from 'flarum/admin/components/DashboardWidget';
+import Alert from 'flarum/common/components/Alert';
+
+const REQUIRED_INDEX_COMPAT = 'v2';
+
+class ReindexWarningWidget extends DashboardWidget {
+  className() {
+    return 'ReindexWarningWidget';
+  }
+
+  content() {
+    return m(Alert, {
+      type: 'warning',
+      dismissible: false,
+      icon: 'fas fa-exclamation-triangle',
+      title: app.translator.trans('blomstra-search.admin.reindex-required.title'),
+    }, app.translator.trans('blomstra-search.admin.reindex-required.detail'));
+  }
+}
 
 app.initializers.add('blomstra-search', () => {
+  const activeIndex = app.data.settings['blomstra-search.active-index'];
+  const compatVersion = app.data.settings['blomstra-search.index-compatible'];
+
+  if (activeIndex && compatVersion !== REQUIRED_INDEX_COMPAT) {
+    extend(DashboardPage.prototype, 'availableWidgets', function (items) {
+      items.add('blomstra-search-reindex', m(ReindexWarningWidget), 110);
+    });
+  }
+
   const languages = new Map();
   [
     'arabic',
@@ -72,12 +102,6 @@ app.initializers.add('blomstra-search', () => {
       type: 'select',
       options: Object.fromEntries(languages.entries()),
       default: 'english',
-    })
-    .registerSetting({
-      setting: 'blomstra-search.elastic-index',
-      label: app.translator.trans('blomstra-search.admin.elastic-index'),
-      default: 'flarum',
-      type: 'input',
     })
     .registerSetting({
       setting: 'blomstra-search.search-discussion-subjects',

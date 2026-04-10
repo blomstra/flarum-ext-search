@@ -29,19 +29,55 @@ use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 
 class BuildCommand extends Command
 {
+    /**
+     * Bump this when a mapping change requires a full reindex.
+     * Stored in blomstra-search.index-compatible after a successful build.
+     */
+    public const INDEX_COMPAT_VERSION = 'v2';
+
     protected $signature = 'blomstra:search:index
         {action? : build | promote | rollback | discard | mapping | fill}
-        {--fresh : With build: drop the staging index and start completely fresh}
-        {--resume : With build: continue from where an interrupted build left off}
-        {--keep-backup : With promote: retain the replaced live index as a backup for rollback}
-        {--pending : With discard: drop the staging index}
-        {--backup : With discard: drop the backup index}
-        {--only= : Seed only this document type (e.g. discussions or posts)}
-        {--max-id= : Limit seeding to IDs up to this value}
-        {--throttle= : Seconds to wait between batches}
-        {--i-am-sure : Skip the promote confirmation prompt (for scripts/CI)}';
+        {--fresh}
+        {--resume}
+        {--staging}
+        {--keep-backup}
+        {--pending}
+        {--backup}
+        {--only=}
+        {--max-id=}
+        {--throttle=}
+        {--i-am-sure}';
 
     protected $description = 'Build and manage the Elasticsearch search index.';
+
+    protected $help = <<<'HELP'
+<comment>Actions and their options:</comment>
+
+  <info>build</info>                Queue documents and promote automatically.
+    <comment>--resume</comment>         Resume an interrupted build from where it left off
+    <comment>--fresh</comment>          Drop the staging index and start completely fresh
+    <comment>--staging</comment>        Keep in staging — requires explicit <info>promote</info> (blue-green)
+    <comment>--keep-backup</comment>    Retain the replaced index for rollback
+
+  <info>promote</info>               Swap alias to staging index (blue-green workflow).
+    <comment>--keep-backup</comment>    Retain the replaced index for rollback
+    <comment>--i-am-sure</comment>      Skip the confirmation prompt
+
+  <info>rollback</info>              Restore the backup index to live.
+
+  <info>discard</info>               Drop an index without promoting.
+    <comment>--pending</comment>        Drop the staging index (cancel a build)
+    <comment>--backup</comment>         Drop the backup index (cleanup after --keep-backup)
+
+  <info>mapping</info>               Push updated mapping to the live index only.
+
+  <info>fill</info>                  Seed only documents missing from the live index.
+
+<comment>Shared seeding options (build / fill):</comment>
+  <comment>--only=TYPE</comment>       Seed only this type: <info>discussions</info> or <info>posts</info>
+  <comment>--throttle=N</comment>      Seconds to wait between batches
+  <comment>--max-id=N</comment>        Limit seeding to IDs up to this value
+HELP;
 
     public function handle(Container $container): void
     {
@@ -139,11 +175,15 @@ class BuildCommand extends Command
         $this->runSeeders($seeders, $container->make(Queue::class), $client, $settings, $targetIndex);
 
         if ($stagingBuild) {
-            $staging = $settings->get('blomstra-search.staging-index');
-            $this->info("Build complete. Drain the queue, then promote '$staging' to live:");
-            $this->line('  php flarum queue:work --stop-when-empty');
-            $this->line('  php flarum blomstra:search:index promote');
-            $this->line('  php flarum blomstra:search:index promote --keep-backup  # retain old index for rollback');
+            if ($this->option('staging')) {
+                $staging = $settings->get('blomstra-search.staging-index');
+                $this->info("Staging build complete. Drain the queue, then promote '$staging' to live:");
+                $this->line('  php flarum queue:work --stop-when-empty');
+                $this->line('  php flarum blomstra:search:index promote');
+            } else {
+                $this->info('Jobs queued. Promoting now (search improves as the queue drains)...');
+                $this->performPromote($client, $alias, $settings);
+            }
         }
     }
 
@@ -159,6 +199,11 @@ class BuildCommand extends Command
             }
         }
 
+        $this->performPromote($client, $alias, $settings);
+    }
+
+    protected function performPromote(Client $client, string $alias, SettingsRepositoryInterface $settings): void
+    {
         $staging = $settings->get('blomstra-search.staging-index');
 
         if (!$staging || !$client->indices()->exists(['index' => $staging])) {
@@ -202,6 +247,7 @@ class BuildCommand extends Command
 
         $settings->set('blomstra-search.active-index', $staging);
         $settings->set('blomstra-search.staging-index', null);
+        $settings->set('blomstra-search.index-compatible', self::INDEX_COMPAT_VERSION);
     }
 
     protected function runRollback(Client $client, string $alias, SettingsRepositoryInterface $settings): void
@@ -376,6 +422,7 @@ class BuildCommand extends Command
         $client->indices()->putAlias(['index' => $concrete, 'name' => $alias]);
 
         $settings->set('blomstra-search.active-index', $concrete);
+        $settings->set('blomstra-search.index-compatible', self::INDEX_COMPAT_VERSION);
 
         foreach ($seeders as $seeder) {
             $this->setContinueAt($settings, $seeder->type(), null);
