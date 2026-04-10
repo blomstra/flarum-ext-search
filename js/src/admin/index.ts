@@ -12,12 +12,16 @@ class ReindexWarningWidget extends DashboardWidget {
   }
 
   content() {
-    return m(Alert, {
-      type: 'warning',
-      dismissible: false,
-      icon: 'fas fa-exclamation-triangle',
-      title: app.translator.trans('blomstra-search.admin.reindex-required.title'),
-    }, app.translator.trans('blomstra-search.admin.reindex-required.detail'));
+    return m(
+      Alert,
+      {
+        type: 'warning',
+        dismissible: false,
+        icon: 'fas fa-exclamation-triangle',
+        title: app.translator.trans('blomstra-search.admin.reindex-required.title'),
+      },
+      app.translator.trans('blomstra-search.admin.reindex-required.detail')
+    );
   }
 }
 
