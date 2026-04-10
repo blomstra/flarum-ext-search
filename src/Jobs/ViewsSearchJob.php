@@ -53,7 +53,7 @@ class ViewsSearchJob extends AbstractJob
                 ],
             ]);
         } catch (\Elasticsearch\Common\Exceptions\Missing404Exception $e) {
-            // Document not yet indexed; will be picked up on next --seed-missing or --recreate.
+            // Document not yet indexed; will be picked up on next: blomstra:search:index fill
         }
     }
 }

@@ -31,7 +31,9 @@ class BuildCommand extends Command
 {
     /**
      * Bump this when a mapping change requires a full reindex.
-     * Stored in blomstra-search.index-compatible after a successful build.
+     * Written into the mapping's _meta.index_compat_version on every build and
+     * read back into blomstra-search.index-compatible by saveIndexedConfig so the
+     * value always reflects the live index — including after a promote/rollback.
      */
     public const INDEX_COMPAT_VERSION = 'v2';
 
@@ -250,7 +252,6 @@ HELP;
 
         $settings->set('blomstra-search.active-index', $staging);
         $settings->set('blomstra-search.staging-index', null);
-        $settings->set('blomstra-search.index-compatible', self::INDEX_COMPAT_VERSION);
         $this->saveIndexedConfig($client, $settings, $staging);
     }
 
@@ -427,8 +428,6 @@ HELP;
         $client->indices()->putAlias(['index' => $concrete, 'name' => $alias]);
 
         $settings->set('blomstra-search.active-index', $concrete);
-        $settings->set('blomstra-search.index-compatible', self::INDEX_COMPAT_VERSION);
-
         $this->saveIndexedConfig($client, $settings, $concrete);
 
         foreach ($seeders as $seeder) {
@@ -488,21 +487,26 @@ HELP;
     }
 
     /**
-     * Persist the analysis config that is actually live in ES for the given index.
-     * Reading from ES (rather than from Flarum settings) means rollbacks are also
-     * covered: the stored values always reflect the index that is currently aliased,
-     * not the settings at the time the command ran.
+     * Persist the analysis config and compat version that are actually live in ES for the
+     * given index. Reading from ES (rather than from Flarum settings) means rollbacks are
+     * also covered: the stored values always reflect the index that is currently aliased,
+     * not the settings at the time the command ran. Indexes built before _meta tracking
+     * existed will yield a null compat version, which correctly triggers the reindex warning.
      */
     protected function saveIndexedConfig(Client $client, SettingsRepositoryInterface $settings, string $indexName): void
     {
-        $response = $client->indices()->getSettings(['index' => $indexName]);
-        $analysis = Arr::get($response, "$indexName.settings.index.analysis", []);
+        $settingsResponse = $client->indices()->getSettings(['index' => $indexName]);
+        $analysis         = Arr::get($settingsResponse, "$indexName.settings.index.analysis", []);
 
         $analyzer = Arr::get($analysis, 'analyzer.flarum_analyzer.type', 'english');
         $minGram  = (int) Arr::get($analysis, 'filter.partial_search_filter.min_gram', self::DEFAULT_MIN_SEARCH_LENGTH);
 
+        $mappingResponse = $client->indices()->getMapping(['index' => $indexName]);
+        $compatVersion   = Arr::get($mappingResponse, "$indexName.mappings._meta.index_compat_version");
+
         $settings->set('blomstra-search.indexed-analyzer', $analyzer);
         $settings->set('blomstra-search.indexed-min-search-length', $minGram);
+        $settings->set('blomstra-search.index-compatible', $compatVersion);
     }
 
     protected function buildIndexSettings(SettingsRepositoryInterface $settings): array
@@ -512,7 +516,8 @@ HELP;
         $maxGram  = 10;
 
         if ($minGram >= $maxGram) {
-            throw new \InvalidArgumentException("min_gram ($minGram) must be less than max_gram ($maxGram).");
+            $this->error("min_gram ($minGram) must be less than max_gram ($maxGram). Using default.");
+            $minGram = self::DEFAULT_MIN_SEARCH_LENGTH;
         }
 
         return [
@@ -543,6 +548,7 @@ HELP;
     protected function mappingProperties(): array
     {
         return [
+            '_meta'      => ['index_compat_version' => self::INDEX_COMPAT_VERSION],
             'properties' => [
                 'join_field'       => ['type' => 'join', 'relations' => ['discussion' => 'post']],
                 'discussion_id'    => ['type' => 'integer'],
