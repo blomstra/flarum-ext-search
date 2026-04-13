@@ -45,6 +45,12 @@ abstract class Seeder
 
     abstract public function toDocument(Model $model): Document;
 
+    /** Relationships to eager-load on the collection before calling toDocument(). */
+    public function relationships(): array
+    {
+        return [];
+    }
+
     protected function extensionEnabled(string $extension): bool
     {
         /** @var ExtensionManager $manager */

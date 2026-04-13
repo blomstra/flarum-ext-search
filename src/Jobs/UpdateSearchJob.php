@@ -25,6 +25,8 @@ class UpdateSearchJob extends Job
             return;
         }
 
+        $this->models->loadMissing($this->seeder->relationships());
+
         // Preparing body for storing.
         $body = $this->models->map(function (Model $model) {
             $document = $this->seeder->toDocument($model);
@@ -38,9 +40,8 @@ class UpdateSearchJob extends Job
         ->flatten(1);
 
         $response = $client->bulk([
-            'index'   => $this->index,
-            'body'    => $body->toArray(),
-            'refresh' => true,
+            'index' => $this->index,
+            'body'  => $body->toArray(),
         ]);
 
         if (Arr::get($response, 'errors') !== true) {

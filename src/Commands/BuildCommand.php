@@ -355,13 +355,13 @@ HELP;
             $seeded = null;
 
             while ($continueAt !== null) {
-                $rangeFrom = max(1, $continueAt - 1000);
+                $rangeFrom = max(1, $continueAt - 2500);
                 $rangeTo   = $continueAt;
 
                 if ($seedMissing) {
                     $response = (new Builder($client))
                         ->index($targetIndex)
-                        ->size(1000)
+                        ->size(2500)
                         ->addQuery(
                             (new BoolQuery())
                                 ->add((new RangeQuery('rawId'))->gte($rangeFrom)->lte($rangeTo))

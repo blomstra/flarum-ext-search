@@ -46,6 +46,12 @@ class DiscussionSeeder extends Seeder
 
     public function query(): Builder
     {
+        return Discussion::query()
+            ->whereNull('hidden_at');
+    }
+
+    public function relationships(): array
+    {
         $includes = [];
 
         if ($this->extensionEnabled('flarum-tags')) {
@@ -57,9 +63,7 @@ class DiscussionSeeder extends Seeder
             $includes[] = 'recipientGroups';
         }
 
-        return Discussion::query()
-            ->whereNull('hidden_at')
-            ->with($includes);
+        return $includes;
     }
 
     public static function savingOn(Dispatcher $events, callable $callable)
@@ -151,37 +155,53 @@ class DiscussionSeeder extends Seeder
         return $document;
     }
 
+    /**
+     * All viewForum permissions keyed by permission string, loaded once per seeder instance.
+     * Avoids N×2 Permission queries inside the per-document map loop.
+     */
+    private ?Collection $cachedPermissions = null;
+    private ?Collection $cachedGlobalPermission = null;
+
+    private function allPermissions(): Collection
+    {
+        if ($this->cachedPermissions === null) {
+            $this->cachedPermissions = Permission::query()
+                ->where(function ($q) {
+                    $q->where('permission', 'viewForum')
+                      ->orWhere('permission', 'like', 'tag%.viewForum');
+                })
+                ->get();
+
+            $this->cachedGlobalPermission = $this->cachedPermissions
+                ->where('permission', 'viewForum')
+                ->pluck('group_id');
+        }
+
+        return $this->cachedPermissions;
+    }
+
     protected function groupsForDiscussion(Discussion $discussion): array
     {
+        $allPerms = $this->allPermissions();
         $permissions = collect();
-
-        $globalPermission = Permission::query()
-            ->where('permission', 'viewForum')
-            ->pluck('group_id');
 
         if ($this->extensionEnabled('flarum-tags')) {
             /** @var Collection $tags */
             $tags = $discussion->tags;
 
-            $tagPermissions = Permission::query()
-                ->whereIn(
-                    'permission',
-                    $tags->pluck('id')->map(fn (int $id) => "tag$id.viewForum")
-                )->get();
-
-            $permissions = $tags->map(function (Tag $tag) use ($tagPermissions) {
-                $permissions = $tagPermissions->where('permission', "tag$tag->id.viewForum");
+            $permissions = $tags->map(function (Tag $tag) use ($allPerms) {
+                $tagPerms = $allPerms->where('permission', "tag$tag->id.viewForum");
 
                 if ($tag->is_restricted) {
-                    $permissions = $permissions->add(['group_id' => Group::ADMINISTRATOR_ID]);
+                    $tagPerms = $tagPerms->add(['group_id' => Group::ADMINISTRATOR_ID]);
                 }
 
-                return $permissions->pluck('group_id');
+                return $tagPerms->pluck('group_id');
             })->flatten();
         }
 
         if (!$discussion->is_private && $permissions->isEmpty()) {
-            $permissions = $globalPermission;
+            $permissions = $this->cachedGlobalPermission;
         }
 
         return $permissions->toArray();
