@@ -78,27 +78,13 @@ class SearchController extends ListDiscussionsController
         $offset  = $this->extractOffset($request);
         $include = array_merge($this->extractInclude($request), ['state']);
 
-        $query = BoolQuery::create()
-            // Always restrict to discussion documents; posts are only searched via has_child.
-            ->add(TermQuery::create('join_field', 'discussion'), 'filter');
-
-        if (!empty($search)) {
-            $query->add($this->buildTextQuery($search, $actor));
-        }
-
-        $this->addFilters($query, $actor, $filters);
-
-        $builder = (new Builder($this->elastic))
-            ->index(resolve('blomstra.search.elastic_index'))
-            ->size($limit + 1)
-            ->from($offset)
-            ->addQuery($query);
-
         $knownSortFields = array_merge(array_values($this->translateSort), ['rawId']);
         $logger          = resolve(LoggerInterface::class);
 
         $phpSortField = null;
         $phpSortDir   = 'desc';
+        $needsScoring = true;
+        $sorts        = [];
 
         foreach ($this->extractSort($request) as $field => $direction) {
             $translated = $this->translateSort[$field] ?? $field;
@@ -108,7 +94,8 @@ class SearchController extends ListDiscussionsController
                 continue;
             }
 
-            $builder->addSort(new Sort($translated, $direction));
+            $sorts[]      = new Sort($translated, $direction);
+            $needsScoring = false;
 
             if ($phpSortField === null && $translated !== 'rawId') {
                 $phpSortField = $translated;
@@ -116,7 +103,44 @@ class SearchController extends ListDiscussionsController
             }
         }
 
-        $response = $builder->search();
+        // Default to latest when no sort is specified — faster than relevance
+        // because has_child can use score_mode:none and ES can short-circuit early.
+        if ($phpSortField === null) {
+            $needsScoring = false;
+            $phpSortField = 'updated_at';
+            $phpSortDir   = 'desc';
+            $sorts[]      = new Sort('updated_at', 'desc');
+        }
+
+        $query = BoolQuery::create()
+            // Always restrict to discussion documents; posts are only searched via has_child.
+            ->add(TermQuery::create('join_field', 'discussion'), 'filter');
+
+        if (!empty($search)) {
+            $query->add($this->buildTextQuery($search, $actor, $needsScoring));
+        }
+
+        $this->addFilters($query, $actor, $filters);
+
+        $builder = (new Builder($this->elastic))
+            ->index(resolve('blomstra.search.elastic_index'))
+            ->addQuery($query);
+
+        foreach ($sorts as $sort) {
+            $builder->addSort($sort);
+        }
+
+        // track_total_hits: false lets ES stop counting once it has collected
+        // enough results in sort order, avoiding a full-index count on every query.
+        $payload = $builder->getPayload();
+        $payload['track_total_hits'] = false;
+
+        $response = $this->elastic->search([
+            'index' => resolve('blomstra.search.elastic_index'),
+            'size'  => $limit + 1,
+            'from'  => $offset,
+            'body'  => $payload,
+        ]);
 
         Discussion::setStateUser($actor);
 
@@ -196,12 +220,15 @@ class SearchController extends ListDiscussionsController
      * Build the text-matching portion of the query.
      *
      * Discussion titles are matched directly (filtered to join_field=discussion).
-     * Post bodies are matched via has_child with score_mode=sum so discussions
-     * with many matching posts score higher than those with a single strong match.
-     * inner_hits returns the best-scoring post for use as mostRelevantPost.
+     * Post bodies are matched via has_child. When $needsScoring is true (relevance
+     * sort), score_mode=sum accumulates child scores onto the parent. When false
+     * (any field sort, including the default updated_at), score_mode=none skips
+     * scoring entirely — ES only checks whether a matching child exists, which is
+     * significantly cheaper on large corpora.
+     * inner_hits returns the best-matching post for use as mostRelevantPost.
      * Hidden posts are only included in matching for users with post.hide permission.
      */
-    protected function buildTextQuery(string $search, User $actor): BoolQuery
+    protected function buildTextQuery(string $search, User $actor, bool $needsScoring = false): BoolQuery
     {
         $textQuery = BoolQuery::create();
 
@@ -222,7 +249,7 @@ class SearchController extends ListDiscussionsController
             $postQuery->minimumShouldMatch(1);
 
             $textQuery->add(
-                HasChildQuery::create('post', $postQuery)->withInnerHits(),
+                HasChildQuery::create('post', $postQuery, $needsScoring ? 'sum' : 'none')->withInnerHits(),
                 'should'
             );
         }
@@ -304,8 +331,12 @@ class SearchController extends ListDiscussionsController
         $search = Arr::get($filters, 'q');
 
         if ($search) {
+            // Strip Flarum gambit operators (tag:foo, author:bar, is:private, etc.)
+            // before passing to ES. These are structural filters handled separately;
+            // leaving them in causes operator:and to require the gambit tokens to
+            // appear literally in post content, producing zero results.
             $q = collect(explode(' ', $search))
-                ->filter(fn (string $part) => $part !== 'is:private')
+                ->filter(fn (string $part) => !preg_match('/^\w+:/', $part))
                 ->filter()
                 ->join(' ');
 
