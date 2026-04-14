@@ -154,8 +154,10 @@ HELP;
             $this->warn("An in-progress build already exists: $staging");
             $this->line('');
             $this->line('Choose one of:');
-            $this->line('  blomstra:search:index build --resume   Continue from where it left off');
-            $this->line('  blomstra:search:index build --fresh    Drop this build and start completely fresh');
+            $this->line('  blomstra:search:index build --resume            Continue from where it left off');
+            $this->line('  blomstra:search:index build --resume --staging   Continue and keep in staging when done');
+            $this->line('  blomstra:search:index build --fresh              Drop this build and start completely fresh');
+            $this->line('  blomstra:search:index build --fresh --staging    Start fresh and keep in staging when done');
             return;
         }
 
