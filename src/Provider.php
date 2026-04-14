@@ -47,7 +47,13 @@ class Provider extends AbstractServiceProvider
 
         $this->container->singleton(Elastic::class, function (Container $container) use ($settings, $config) {
             $builder = ClientBuilder::create()
-                ->setHosts([$settings->get('blomstra-search.elastic-endpoint')]);
+                ->setHosts([$settings->get('blomstra-search.elastic-endpoint')])
+                ->setConnectionParams([
+                    'client' => [
+                        'connect_timeout' => 2,  // fail fast if ES is unreachable
+                        'timeout'         => 10, // allow time for complex queries
+                    ],
+                ]);
 
             if ($config->inDebugMode()) {
                 $builder->setLogger($container->make(LoggerInterface::class));

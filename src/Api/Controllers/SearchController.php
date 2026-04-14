@@ -37,7 +37,7 @@ use Illuminate\Support\Str;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
 use Spatie\ElasticsearchQueryBuilder\Builder;
-use Spatie\ElasticsearchQueryBuilder\Queries\BoolQuery;
+use Blomstra\Search\Elasticsearch\BoolQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 use Spatie\ElasticsearchQueryBuilder\Sorts\Sort;
 use Tobscure\JsonApi\Document;
@@ -217,6 +217,10 @@ class SearchController extends ListDiscussionsController
                 $postQuery->add(TermQuery::create('is_hidden', 'false'), 'filter');
             }
 
+            // Without minimum_should_match, ES default MSM is 0 when a filter clause is present,
+            // causing has_child to score every non-hidden post instead of only matching ones.
+            $postQuery->minimumShouldMatch(1);
+
             $textQuery->add(
                 HasChildQuery::create('post', $postQuery)->withInnerHits(),
                 'should'
@@ -235,7 +239,6 @@ class SearchController extends ListDiscussionsController
         }
         if ($this->matchWords) {
             $should->add((new MatchQuery('content', $search))->operator('and')->boost(1.8 * $boost), 'should');
-            $should->add((new MatchQuery('content', $search))->operator('or')->boost(0.8 * $boost), 'should');
         }
 
         return $should;
