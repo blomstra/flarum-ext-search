@@ -214,7 +214,7 @@ class SearchController extends ListDiscussionsController
 
             // Guests and non-moderators may not see hidden posts; exclude them from child matching.
             if ($actor->isGuest() || !$actor->hasPermission('post.hide')) {
-                $postQuery->add(TermQuery::create('is_hidden', false), 'filter');
+                $postQuery->add(TermQuery::create('is_hidden', 'false'), 'filter');
             }
 
             $textQuery->add(

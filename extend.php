@@ -34,5 +34,6 @@ return [
     (new Flarum\Settings())
         ->default('blomstra-search.search-discussion-subjects', true)
         ->default('blomstra-search.search-post-bodies', true)
-        ->default('blomstra-search.min-search-length', Commands\BuildCommand::DEFAULT_MIN_SEARCH_LENGTH),
+        ->default('blomstra-search.min-search-length', Commands\BuildCommand::DEFAULT_MIN_SEARCH_LENGTH)
+        ->serializeToForum('blomstraSearchMinLength', 'blomstra-search.min-search-length', 'intval'),
 ];

@@ -9,7 +9,7 @@ import DiscussionsSearchSource from './SearchSources/DiscussionsSearchSource';
 import extendDiscussionState from './PaginatedListStates/extendDiscussionState';
 
 app.initializers.add('blomstra-search', () => {
-  const minLength = parseInt(app.data.settings['blomstra-search.min-search-length'] || String(Search.MIN_SEARCH_LEN), 10);
+  const minLength = (app.forum.attribute('blomstraSearchMinLength') as number) || Search.MIN_SEARCH_LEN;
   if (minLength !== Search.MIN_SEARCH_LEN) {
     // Flarum provides no extension point for MIN_SEARCH_LEN, so we overwrite the
     // static property directly. TypeScript `readonly` is compile-time only — at
