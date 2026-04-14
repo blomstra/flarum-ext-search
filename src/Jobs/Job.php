@@ -14,7 +14,7 @@ namespace Blomstra\Search\Jobs;
 
 use Blomstra\Search\Seeders\Seeder;
 use Flarum\Queue\AbstractJob;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Collection;
 
 abstract class Job extends AbstractJob
 {

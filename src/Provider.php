@@ -26,7 +26,7 @@ use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Queue\Queue;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Collection;
 use Laminas\Stratigility\MiddlewarePipe;
 use Psr\Log\LoggerInterface;
 
