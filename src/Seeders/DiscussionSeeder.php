@@ -24,7 +24,7 @@ use FoF\Byobu\Events as Byobu;
 use FoF\DiscussionViews\Events\DiscussionWasViewed;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Model;
 
 class DiscussionSeeder extends Seeder
