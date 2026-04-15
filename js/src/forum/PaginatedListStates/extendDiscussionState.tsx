@@ -17,6 +17,12 @@ export default function extendDiscussionState() {
       ...params.page,
     };
 
+    // Default to latest sort when searching without an explicit sort parameter.
+    // Matches the backend default and keeps the dropdown label in sync.
+    if (!params.sort) {
+      params.sort = '-lastPostedAt';
+    }
+
     if (Array.isArray(params.include)) {
       params.include = params.include.join(',');
     }

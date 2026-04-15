@@ -103,9 +103,10 @@ class SearchController extends ListDiscussionsController
             }
         }
 
-        // Default to latest when no sort is specified — faster than relevance
-        // because has_child can use score_mode:none and ES can short-circuit early.
-        if ($phpSortField === null) {
+        // Default to latest when no explicit sort is requested. This lets has_child use
+        // score_mode:none, which skips child scoring entirely and lets ES short-circuit
+        // early on large corpora. Relevance is still available via sort=relevant if added.
+        if (empty($sorts)) {
             $needsScoring = false;
             $phpSortField = 'updated_at';
             $phpSortDir   = 'desc';
@@ -220,11 +221,12 @@ class SearchController extends ListDiscussionsController
      * Build the text-matching portion of the query.
      *
      * Discussion titles are matched directly (filtered to join_field=discussion).
-     * Post bodies are matched via has_child. When $needsScoring is true (relevance
-     * sort), score_mode=sum accumulates child scores onto the parent. When false
-     * (any field sort, including the default updated_at), score_mode=none skips
-     * scoring entirely — ES only checks whether a matching child exists, which is
-     * significantly cheaper on large corpora.
+     * Post bodies are matched via has_child. When $needsScoring is true (no explicit
+     * sort, i.e. relevance ordering), score_mode=sum accumulates child scores onto the
+     * parent so that discussions with many strongly-matching posts rank higher. When
+     * false (any explicit field sort), score_mode=none skips scoring entirely — ES only
+     * checks whether a matching child exists, which is significantly cheaper on large
+     * corpora.
      * inner_hits returns the best-matching post for use as mostRelevantPost.
      * Hidden posts are only included in matching for users with post.hide permission.
      */
