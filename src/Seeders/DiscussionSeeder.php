@@ -70,7 +70,7 @@ class DiscussionSeeder extends Seeder
     {
         $events->listen([
             // flarum/core events
-            Core\Started::class, Core\Restored::class,
+            Core\Started::class, Core\Restored::class, Core\Renamed::class,
             // fof/byobu discussion recipients events.
             Byobu\DiscussionMadePublic::class, Byobu\RemovedSelf::class, Byobu\RecipientsChanged::class,
         ], function ($event) use ($callable) {
