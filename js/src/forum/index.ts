@@ -7,6 +7,7 @@ import ItemList from 'flarum/common/utils/ItemList';
 
 import DiscussionsSearchSource from './SearchSources/DiscussionsSearchSource';
 import extendDiscussionState from './PaginatedListStates/extendDiscussionState';
+import extendDiscussionListItem from './extendDiscussionListItem';
 
 app.initializers.add('blomstra-search', () => {
   extend(Search.prototype, 'sourceItems', function (this: Search<SearchAttrs>, items: ItemList<SearchSource>) {
@@ -25,6 +26,7 @@ app.initializers.add(
   'blomstra-search-early',
   () => {
     extendDiscussionState();
+    extendDiscussionListItem();
   },
   999999
 );
