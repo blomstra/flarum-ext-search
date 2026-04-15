@@ -16,6 +16,7 @@ use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\UpdateSearchJob;
 use Blomstra\Search\Seeders\Seeder;
 use Elasticsearch\Client;
+use Elasticsearch\Common\Exceptions\ElasticsearchException;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
@@ -361,17 +362,7 @@ HELP;
                 $rangeTo   = $continueAt;
 
                 if ($seedMissing) {
-                    $response = (new Builder($client))
-                        ->index($targetIndex)
-                        ->size(2500)
-                        ->addQuery(
-                            (new BoolQuery())
-                                ->add((new RangeQuery('rawId'))->gte($rangeFrom)->lte($rangeTo))
-                                ->add(TermQuery::create('join_field', $seeder->joinRelation()))
-                        )
-                        ->search();
-
-                    $seeded = Arr::pluck(Arr::get($response, 'hits.hits'), '_source.rawId');
+                    $seeded = $this->queryIndexedIds($client, $targetIndex, $seeder->joinRelation(), $rangeFrom, $rangeTo);
                 }
 
                 /** @var Collection $collection */
@@ -569,6 +560,48 @@ HELP;
                 'is_hidden'        => ['type' => 'boolean'],
             ],
         ];
+    }
+
+    /**
+     * Query ES for rawIds already indexed in $targetIndex for the given $joinRelation and ID range.
+     * Retries on transient ES failures (NoNodesAvailableException / other ElasticsearchException)
+     * by sleeping past the StaticNoPingConnectionPool dead-node timeout (default 60 s) before
+     * each retry, giving the pool a chance to resurface the node.
+     */
+    protected function queryIndexedIds(
+        Client $client,
+        string $targetIndex,
+        string $joinRelation,
+        int $rangeFrom,
+        int $rangeTo,
+        int $maxRetries = 10
+    ): array {
+        $attempt = 0;
+
+        while (true) {
+            try {
+                $response = (new Builder($client))
+                    ->index($targetIndex)
+                    ->size(2500)
+                    ->addQuery(
+                        (new BoolQuery())
+                            ->add((new RangeQuery('rawId'))->gte($rangeFrom)->lte($rangeTo))
+                            ->add(TermQuery::create('join_field', $joinRelation))
+                    )
+                    ->search();
+
+                return Arr::pluck(Arr::get($response, 'hits.hits'), '_source.rawId');
+            } catch (ElasticsearchException $e) {
+                $attempt++;
+
+                if ($attempt >= $maxRetries) {
+                    throw $e;
+                }
+
+                $this->warn("ES error on range {$rangeFrom}–{$rangeTo} (attempt {$attempt}/{$maxRetries}): {$e->getMessage()}. Waiting 65 s before retry…");
+                sleep(65); // outlast the StaticNoPingConnectionPool dead-node window (default 60 s)
+            }
+        }
     }
 
     protected function getContinueAt(SettingsRepositoryInterface $settings, string $type): ?int
