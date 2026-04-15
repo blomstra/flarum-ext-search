@@ -14,6 +14,7 @@ namespace Blomstra\Search\Jobs;
 
 use Blomstra\Search\Exceptions\SeedingException;
 use Elasticsearch\Client;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 
@@ -50,10 +51,11 @@ class UpdateSearchJob extends Job
 
         $items = Arr::get($response, 'items');
 
-        $error = Arr::get(Arr::first($items), 'index.error.reason');
+        $failed = array_filter($items, fn ($item) => isset($item['index']['error']));
+        $error  = Arr::get(Arr::first($failed), 'index.error.reason', 'unknown error');
 
         throw new SeedingException(
-            "Failed to seed: $error",
+            "Failed to seed: $error (" . count($failed) . '/' . count($items) . ' items failed)',
             $items
         );
     }
