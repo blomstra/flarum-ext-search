@@ -36,10 +36,14 @@ class BuildCommand extends Command
      * read back into blomstra-search.index-compatible by saveIndexedConfig so the
      * value always reflects the live index — including after a promote/rollback.
      */
-    public const INDEX_COMPAT_VERSION = 'v2';
+    public const INDEX_COMPAT_VERSION = 'v3';
 
     /** Matches Flarum's Search::MIN_SEARCH_LEN — the default minimum query length. */
     public const DEFAULT_MIN_SEARCH_LENGTH = 3;
+
+    /** N-gram bounds for the title autocomplete subfield (not admin-configurable). */
+    private const TITLE_MIN_GRAM = 2;
+    private const TITLE_MAX_GRAM = 15;
 
     protected $signature = 'blomstra:search:index
         {action? : build | promote | rollback | discard | mapping | fill}
@@ -491,47 +495,66 @@ HELP;
         $settingsResponse = $client->indices()->getSettings(['index' => $indexName]);
         $analysis         = Arr::get($settingsResponse, "$indexName.settings.index.analysis", []);
 
-        $analyzer = Arr::get($analysis, 'analyzer.flarum_analyzer.type', 'english');
-        $minGram  = (int) Arr::get($analysis, 'filter.partial_search_filter.min_gram', self::DEFAULT_MIN_SEARCH_LENGTH);
+        $analyzer      = Arr::get($analysis, 'analyzer.flarum_analyzer.type', 'english');
+        $stemExclusion = Arr::get($analysis, 'analyzer.flarum_analyzer.stem_exclusion', []);
 
         $mappingResponse = $client->indices()->getMapping(['index' => $indexName]);
         $compatVersion   = Arr::get($mappingResponse, "$indexName.mappings._meta.index_compat_version");
 
         $settings->set('blomstra-search.indexed-analyzer', $analyzer);
-        $settings->set('blomstra-search.indexed-min-search-length', $minGram);
+        $settings->set('blomstra-search.indexed-stem-exclusion', implode("\n", $stemExclusion));
         $settings->set('blomstra-search.index-compatible', $compatVersion);
     }
 
     protected function buildIndexSettings(SettingsRepositoryInterface $settings): array
     {
         $language = $settings->get('blomstra-search.analyzer-language') ?: 'english';
-        $minGram  = max(1, (int) ($settings->get('blomstra-search.min-search-length') ?: self::DEFAULT_MIN_SEARCH_LENGTH));
-        $maxGram  = 10;
 
-        if ($minGram >= $maxGram) {
-            $this->error("min_gram ($minGram) must be less than max_gram ($maxGram). Using default.");
-            $minGram = self::DEFAULT_MIN_SEARCH_LENGTH;
+        $raw           = $settings->get('blomstra-search.stem-exclusion', '');
+        $stemExclusion = array_values(array_filter(array_map('trim', explode("\n", $raw))));
+
+        if ($language === 'cjk') {
+            // CJK uses the built-in bigram analyzer; no autocomplete subfield.
+            return [
+                'analysis' => [
+                    'analyzer' => [
+                        'flarum_analyzer' => ['type' => 'cjk'],
+                    ],
+                ],
+            ];
+        }
+
+        $analyzerConfig = ['type' => $language];
+
+        if (!empty($stemExclusion)) {
+            $analyzerConfig['stem_exclusion'] = $stemExclusion;
         }
 
         return [
-            'index.max_ngram_diff' => $maxGram - $minGram,
+            'index.max_ngram_diff' => self::TITLE_MAX_GRAM - self::TITLE_MIN_GRAM,
             'analysis'             => [
-                'analyzer' => [
-                    'flarum_analyzer' => [
-                        'type' => $language,
-                    ],
-                    'flarum_analyzer_partial' => [
-                        'type'      => 'custom',
-                        'tokenizer' => 'standard',
-                        'filter'    => ['lowercase', 'partial_search_filter'],
+                'filter' => [
+                    'title_autocomplete_filter' => [
+                        'type'        => 'edge_ngram',
+                        'min_gram'    => self::TITLE_MIN_GRAM,
+                        'max_gram'    => self::TITLE_MAX_GRAM,
+                        'token_chars' => ['letter', 'digit'],
                     ],
                 ],
-                'filter' => [
-                    'partial_search_filter' => [
-                        'type'        => 'ngram',
-                        'min_gram'    => $minGram,
-                        'max_gram'    => $maxGram,
-                        'token_chars' => ['letter', 'digit', 'symbol'],
+                'analyzer' => [
+                    // Symmetric language analyzer: used for BOTH index and search on content + title.
+                    'flarum_analyzer'            => $analyzerConfig,
+                    // Title autocomplete index-time: prefix n-grams, no stemming.
+                    'flarum_title_autocomplete'  => [
+                        'type'      => 'custom',
+                        'tokenizer' => 'standard',
+                        'filter'    => ['lowercase', 'title_autocomplete_filter'],
+                    ],
+                    // Title autocomplete search-time: just lowercase — predictable on partial words.
+                    'flarum_title_search' => [
+                        'type'      => 'custom',
+                        'tokenizer' => 'standard',
+                        'filter'    => ['lowercase'],
                     ],
                 ],
             ],
@@ -540,12 +563,31 @@ HELP;
 
     protected function mappingProperties(): array
     {
+        $language = resolve(SettingsRepositoryInterface::class)->get('blomstra-search.analyzer-language') ?: 'english';
+
+        $titleMapping = [
+            'type'     => 'text',
+            'analyzer' => 'flarum_analyzer',
+        ];
+
+        // Only add the autocomplete subfield for non-CJK languages.
+        if ($language !== 'cjk') {
+            $titleMapping['fields'] = [
+                'autocomplete' => [
+                    'type'            => 'text',
+                    'analyzer'        => 'flarum_title_autocomplete',
+                    'search_analyzer' => 'flarum_title_search',
+                ],
+            ];
+        }
+
         return [
             '_meta'      => ['index_compat_version' => self::INDEX_COMPAT_VERSION],
             'properties' => [
                 'join_field'       => ['type' => 'join', 'relations' => ['discussion' => 'post']],
                 'discussion_id'    => ['type' => 'integer'],
-                'content'          => ['type' => 'text', 'analyzer' => 'flarum_analyzer_partial', 'search_analyzer' => 'flarum_analyzer'],
+                'content'          => ['type' => 'text', 'analyzer' => 'flarum_analyzer'],
+                'title'            => $titleMapping,
                 'rawId'            => ['type' => 'integer'],
                 'created_at'       => ['type' => 'date'],
                 'updated_at'       => ['type' => 'date'],

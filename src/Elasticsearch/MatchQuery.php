@@ -62,6 +62,10 @@ class MatchQuery extends \Spatie\ElasticsearchQueryBuilder\Queries\MatchQuery
         $query['match'][$this->field]['boost'] = $this->boost;
         $query['match'][$this->field]['zero_terms_query'] = $this->zeroTerms ? 'all' : 'none';
 
+        if ($this->analyzer !== null) {
+            $query['match'][$this->field]['analyzer'] = $this->analyzer;
+        }
+
         return $query;
     }
 }
