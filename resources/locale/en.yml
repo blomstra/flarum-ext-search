@@ -17,9 +17,12 @@ blomstra-search:
         search-post-bodies: Search inside comments
         match-sentences: Match search term against full sentence
         match-words: Match search term against full words
+        settings:
+            stem-exclusion:
+                label: "Protected words (stem exclusion)"
+                help: "One word per line. These words will not be stemmed during search (e.g. brand names, proper nouns). Not applicable for CJK or Thai languages. Requires a full re-index to take effect."
         min-search-length:
             label: Minimum search query length
             help: |
                 Minimum number of characters required before a search is triggered. Lower this to 1 or 2
                 for CJK (Chinese, Japanese, Korean) communities where single characters carry full meaning.
-                Changing this requires a full index rebuild to take effect.

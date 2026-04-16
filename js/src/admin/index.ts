@@ -4,7 +4,7 @@ import DashboardPage from 'flarum/admin/components/DashboardPage';
 import DashboardWidget from 'flarum/admin/components/DashboardWidget';
 import Alert from 'flarum/common/components/Alert';
 
-const REQUIRED_INDEX_COMPAT = 'v2';
+const REQUIRED_INDEX_COMPAT = 'v3';
 
 class ReindexWarningWidget extends DashboardWidget {
   className() {
@@ -35,46 +35,43 @@ app.initializers.add('blomstra-search', () => {
     });
   }
 
-  const languages = new Map();
-  [
-    'arabic',
-    'armenian',
-    'basque',
-    'bengali',
-    'brazilian',
-    'bulgarian',
-    'catalan',
-    'cjk',
-    'czech',
-    'danish',
-    'dutch',
-    'english',
-    'estonian',
-    'finnish',
-    'french',
-    'galician',
-    'german',
-    'greek',
-    'hindi',
-    'hungarian',
-    'indonesian',
-    'irish',
-    'italian',
-    'latvian',
-    'lithuanian',
-    'norwegian',
-    'persian',
-    'portuguese',
-    'romanian',
-    'russian',
-    'sorani',
-    'spanish',
-    'swedish',
-    'turkish',
-    'thai',
-  ].forEach((language) => {
-    languages.set(language, language);
-  });
+  const languages: Record<string, string> = {
+    arabic:     'Arabic',
+    armenian:   'Armenian',
+    basque:     'Basque',
+    bengali:    'Bengali',
+    brazilian:  'Brazilian Portuguese',
+    bulgarian:  'Bulgarian',
+    catalan:    'Catalan',
+    cjk:        'CJK (Chinese, Japanese, Korean)',
+    czech:      'Czech',
+    danish:     'Danish',
+    dutch:      'Dutch',
+    english:    'English',
+    estonian:   'Estonian',
+    finnish:    'Finnish',
+    french:     'French',
+    galician:   'Galician',
+    german:     'German',
+    greek:      'Greek',
+    hindi:      'Hindi',
+    hungarian:  'Hungarian',
+    indonesian: 'Indonesian',
+    irish:      'Irish',
+    italian:    'Italian',
+    latvian:    'Latvian',
+    lithuanian: 'Lithuanian',
+    norwegian:  'Norwegian',
+    persian:    'Persian',
+    portuguese: 'Portuguese',
+    romanian:   'Romanian',
+    russian:    'Russian',
+    sorani:     'Sorani (Kurdish)',
+    spanish:    'Spanish',
+    swedish:    'Swedish',
+    turkish:    'Turkish',
+    thai:       'Thai',
+  };
 
   app.extensionData
     .for('blomstra-search')
@@ -84,12 +81,10 @@ app.initializers.add('blomstra-search', () => {
       if (!activeIndex || !indexedAnalyzer) return null;
 
       const currentAnalyzer = this.setting('blomstra-search.analyzer-language')() || 'english';
-      const currentMinLength = this.setting('blomstra-search.min-search-length')();
-      const indexedMinLength = String(
-        app.data.settings['blomstra-search.indexed-min-search-length'] || app.data.settings['blomstra-search.min-search-length']
-      );
+      const currentStemExclusion = this.setting('blomstra-search.stem-exclusion')() || '';
+      const indexedStemExclusion = app.data.settings['blomstra-search.indexed-stem-exclusion'] || '';
 
-      if (currentAnalyzer === indexedAnalyzer && currentMinLength === indexedMinLength) return null;
+      if (currentAnalyzer === indexedAnalyzer && currentStemExclusion === indexedStemExclusion) return null;
 
       return m(
         Alert,
@@ -119,14 +114,6 @@ app.initializers.add('blomstra-search', () => {
       type: 'input',
     })
     .registerSetting({
-      setting: 'blomstra-search.analyzer-language',
-      label: app.translator.trans('blomstra-search.admin.analyzer.label'),
-      help: app.translator.trans('blomstra-search.admin.analyzer.help'),
-      type: 'select',
-      options: Object.fromEntries(languages.entries()),
-      default: 'english',
-    })
-    .registerSetting({
       setting: 'blomstra-search.search-discussion-subjects',
       label: app.translator.trans('blomstra-search.admin.search-discussion-subjects'),
       type: 'switch',
@@ -137,11 +124,33 @@ app.initializers.add('blomstra-search', () => {
       type: 'switch',
     })
     .registerSetting({
-      setting: 'blomstra-search.min-search-length',
-      label: app.translator.trans('blomstra-search.admin.min-search-length.label'),
-      help: app.translator.trans('blomstra-search.admin.min-search-length.help'),
+      setting: 'blomstra-search.analyzer-language',
+      label: app.translator.trans('blomstra-search.admin.analyzer.label'),
+      help: app.translator.trans('blomstra-search.admin.analyzer.help'),
       type: 'select',
-      options: { '1': '1', '2': '2', '3': '3', '4': '4' },
-      default: app.data.settings['blomstra-search.min-search-length'],
+      options: languages,
+      default: 'english',
+    })
+    .registerSetting(function (this: any) {
+      const isCjk = (this.setting('blomstra-search.analyzer-language')() || 'english') === 'cjk';
+      return this.buildSettingComponent({
+        setting: 'blomstra-search.stem-exclusion',
+        type: 'textarea',
+        label: app.translator.trans('blomstra-search.admin.settings.stem-exclusion.label'),
+        help: app.translator.trans('blomstra-search.admin.settings.stem-exclusion.help'),
+        disabled: isCjk,
+      });
+    })
+    .registerSetting(function (this: any) {
+      const isCjk = (this.setting('blomstra-search.analyzer-language')() || 'english') === 'cjk';
+      return this.buildSettingComponent({
+        setting: 'blomstra-search.min-search-length',
+        label: app.translator.trans('blomstra-search.admin.min-search-length.label'),
+        help: app.translator.trans('blomstra-search.admin.min-search-length.help'),
+        type: 'select',
+        options: { '1': '1', '2': '2', '3': '3', '4': '4' },
+        default: app.data.settings['blomstra-search.min-search-length'],
+        disabled: isCjk,
+      });
     });
 });

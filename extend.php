@@ -35,5 +35,7 @@ return [
         ->default('blomstra-search.search-discussion-subjects', true)
         ->default('blomstra-search.search-post-bodies', true)
         ->default('blomstra-search.min-search-length', Commands\BuildCommand::DEFAULT_MIN_SEARCH_LENGTH)
-        ->serializeToForum('blomstraSearchMinLength', 'blomstra-search.min-search-length', 'intval'),
+        ->default('blomstra-search.stem-exclusion', '')
+        ->serializeToForum('blomstraSearchMinLength', 'blomstra-search.min-search-length', 'intval')
+        ->serializeToForum('blomstraSearchPostBodies', 'blomstra-search.search-post-bodies', fn ($v) => (bool) $v, true),
 ];
