@@ -78,6 +78,11 @@ class SearchController extends ListDiscussionsController
         $offset  = $this->extractOffset($request);
         $include = array_merge($this->extractInclude($request), ['state']);
 
+        // Autocomplete path: fast prefix match on title.autocomplete only.
+        if (!empty($filters['autocomplete']) && !empty($search)) {
+            return $this->handleAutocomplete($search, $actor, $limit, $offset, $include, $document, $request);
+        }
+
         $knownSortFields = array_merge(array_values($this->translateSort), ['rawId']);
         $logger          = resolve(LoggerInterface::class);
 
@@ -215,6 +220,85 @@ class SearchController extends ListDiscussionsController
         }
 
         return $discussions;
+    }
+
+    /**
+     * Fast autocomplete path: match prefix n-grams on title.autocomplete only.
+     * No has_child, no phrase scoring — a single MatchQuery suffices.
+     */
+    protected function handleAutocomplete(
+        string $search,
+        User $actor,
+        int $limit,
+        int $offset,
+        array $include,
+        Document $document,
+        ServerRequestInterface $request
+    ): mixed {
+        $query = BoolQuery::create()
+            ->add(TermQuery::create('join_field', 'discussion'), 'filter');
+
+        $query->add($this->buildAutocompleteQuery($search), 'must');
+
+        $this->addFilters($query, $actor, []);
+
+        $payload         = (new Builder($this->elastic))
+            ->index(resolve('blomstra.search.elastic_index'))
+            ->addQuery($query)
+            ->addSort(new Sort('updated_at', 'desc'))
+            ->getPayload();
+
+        $response = $this->elastic->search([
+            'index' => resolve('blomstra.search.elastic_index'),
+            'size'  => $limit + 1,
+            'from'  => $offset,
+            'body'  => $payload,
+        ]);
+
+        Discussion::setStateUser($actor);
+
+        $results = Collection::make(Arr::get($response, 'hits.hits'))
+            ->map(fn ($hit) => [
+                'discussion_id'        => Str::after($hit['_id'], 'discussions:'),
+                'most_relevant_post_id' => null,
+                'weight'               => Arr::get($hit, 'sort.0', 0),
+            ]);
+
+        $document->addPaginationLinks(
+            $this->uri->to('api')->route('blomstra.search', ['type' => 'discussions']),
+            $request->getQueryParams(),
+            $offset,
+            $limit,
+            $results->count() > $limit ? null : 0
+        );
+
+        $results = $results->take($limit);
+
+        $discussions = Discussion::query()
+            ->when(
+                $actor->isGuest() || !$actor->hasPermission('discussion.hide'),
+                fn ($q) => $q->whereNull('hidden_at')
+            )
+            ->whereIn('id', $results->pluck('discussion_id')->filter())
+            ->get()
+            ->each(function (Discussion $discussion) use ($results) {
+                $result = $results->firstWhere('discussion_id', $discussion->id);
+                $discussion->most_relevant_post_id = $result['most_relevant_post_id'] ?? $discussion->first_post_id;
+                $discussion->weight = $result['weight'] ?? 0;
+            })
+            ->sortByDesc('updated_at')
+            ->unique();
+
+        $this->loadRelations($discussions, $include);
+
+        return $discussions;
+    }
+
+    protected function buildAutocompleteQuery(string $search): MatchQuery
+    {
+        return (new MatchQuery('title.autocomplete', $search))
+            ->operator('and')
+            ->boost(1.0);
     }
 
     /**
