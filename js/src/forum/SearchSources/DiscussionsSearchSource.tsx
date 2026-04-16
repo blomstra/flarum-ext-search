@@ -21,12 +21,18 @@ export default class DiscussionsSearchSource implements SearchSource {
   private type = 'discussions';
 
   async search(query: string): Promise<void> {
+    // Suppress ES instant results when "search within comments" is ON;
+    // only usernames are shown in that mode.
+    if (app.forum.attribute('blomstraSearchPostBodies')) {
+      return;
+    }
+
     query = query.toLowerCase();
 
     this.results.set(query, []);
 
     const params = {
-      filter: { q: query },
+      filter: { q: query, autocomplete: 1 },
       page: { limit: 3 },
       include: 'mostRelevantPost',
     };
