@@ -17,6 +17,7 @@ use Spatie\ElasticsearchQueryBuilder\Queries\MatchQuery;
 class MatchPhraseQuery extends MatchQuery
 {
     protected float $boost = 1;
+    protected ?int $slop = null;
 
     public function boost(float $boost = 1)
     {
@@ -25,14 +26,22 @@ class MatchPhraseQuery extends MatchQuery
         return $this;
     }
 
+    public function slop(int $slop): static
+    {
+        $this->slop = $slop;
+
+        return $this;
+    }
+
     public function toArray(): array
     {
-        $query = parent::toArray()['match'];
+        $base   = parent::toArray()['match'][$this->field];
+        $params = ['query' => $base['query'], 'boost' => $this->boost];
 
-        $query[$this->field]['boost'] = $this->boost;
+        if ($this->slop !== null) {
+            $params['slop'] = $this->slop;
+        }
 
-        return [
-            'match_phrase' => $query,
-        ];
+        return ['match_phrase' => [$this->field => $params]];
     }
 }

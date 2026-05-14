@@ -13,6 +13,7 @@
 namespace Blomstra\Search\Seeders;
 
 use Blomstra\Search\Save\Document;
+use Blomstra\Search\TextNormalizer;
 use Flarum\Api\Serializer\DiscussionSerializer;
 use Flarum\Api\Serializer\PostSerializer;
 use Flarum\Discussion\Discussion;
@@ -89,7 +90,7 @@ class CommentSeeder extends Seeder
             'discussion_id' => $model->discussion_id,
             'id'            => $this->type().':'.$model->id,
             'rawId'         => $model->id,
-            'content'       => $model->content,
+            'content'       => TextNormalizer::fold($model->content),
             'is_hidden'     => $model->hidden_at !== null,
         ]);
     }

@@ -16,6 +16,7 @@ use Blomstra\Search\Elasticsearch\HasChildQuery;
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
 use Blomstra\Search\Elasticsearch\TermsQuery;
+use Blomstra\Search\TextNormalizer;
 use Blomstra\Search\Searchers\CommentPostSearcher;
 use Blomstra\Search\Searchers\DiscussionSearcher;
 use Blomstra\Search\Searchers\Searcher;
@@ -112,8 +113,10 @@ class SearchController extends ListDiscussionsController
             // Always restrict to discussion documents; posts are only searched via has_child.
             ->add(TermQuery::create('join_field', 'discussion'), 'filter');
 
+        $explicitPhrases = $this->getExplicitPhrases($filters);
+
         if (!empty($search)) {
-            $query->add($this->buildTextQuery($search, $actor, $needsScoring));
+            $query->add($this->buildTextQuery($search, $actor, $needsScoring, $explicitPhrases));
         }
 
         $this->addFilters($query, $actor, $filters);
@@ -247,19 +250,29 @@ class SearchController extends ListDiscussionsController
      * inner_hits returns the best-matching post for use as mostRelevantPost.
      * Hidden posts are only included in matching for users with post.hide permission.
      */
-    protected function buildTextQuery(string $search, User $actor, bool $needsScoring = false): BoolQuery
+    protected function buildTextQuery(string $search, User $actor, bool $needsScoring = false, array $explicitPhrases = []): BoolQuery
     {
         $textQuery = BoolQuery::create();
 
         if ($this->discussionSearcher?->enabled()) {
-            $textQuery->add($this->buildShouldClauses($search, $this->discussionSearcher->boost()), 'should');
+            $boost = $this->discussionSearcher->boost();
+            $textQuery->add($this->buildShouldClauses($search, $boost), 'should');
             // Extra boost for explicit title field — only discussion docs have this field,
             // so it adds bonus score specifically when the title matches.
-            $textQuery->add($this->buildShouldClauses($search, $this->discussionSearcher->boost() * 2, 'title'), 'should');
+            $textQuery->add($this->buildShouldClauses($search, $boost * 2, 'title'), 'should');
+
+            foreach ($explicitPhrases as $phrase) {
+                $textQuery->add((new MatchPhraseQuery('title', $phrase))->boost(10 * $boost), 'should');
+            }
         }
 
         if ($this->postSearcher?->enabled()) {
-            $postQuery = $this->buildShouldClauses($search, $this->postSearcher->boost());
+            $postBoost = $this->postSearcher->boost();
+            $postQuery = $this->buildShouldClauses($search, $postBoost);
+
+            foreach ($explicitPhrases as $phrase) {
+                $postQuery->add((new MatchPhraseQuery('content', $phrase))->boost(10 * $postBoost), 'should');
+            }
 
             // Guests and non-moderators may not see hidden posts; exclude them from child matching.
             if ($actor->isGuest() || !$actor->hasPermission('post.hide')) {
@@ -285,12 +298,22 @@ class SearchController extends ListDiscussionsController
 
         if ($this->matchSentences) {
             $should->add((new MatchPhraseQuery($field, $search))->boost(2 * $boost), 'should');
+            if (str_contains($search, ' ')) {
+                $should->add((new MatchPhraseQuery($field, $search))->slop(2)->boost(1.5 * $boost), 'should');
+            }
         }
         if ($this->matchWords) {
             $should->add((new MatchQuery($field, $search))->operator('and')->boost(1.8 * $boost), 'should');
         }
 
         return $should;
+    }
+
+    protected function getExplicitPhrases(array $filters): array
+    {
+        $search = Arr::get($filters, 'q', '');
+        preg_match_all('/"([^"]{2,})"/', $search, $matches);
+        return array_map([TextNormalizer::class, 'fold'], $matches[1]);
     }
 
     protected function extensionEnabled(string $extension): bool
@@ -362,7 +385,10 @@ class SearchController extends ListDiscussionsController
                 ->filter()
                 ->join(' ');
 
-            return empty($q) ? null : $q;
+            // Strip quote characters so quoted terms still participate in regular matching.
+            $q = str_replace('"', '', $q);
+
+            return empty($q) ? null : TextNormalizer::fold($q);
         }
 
         return null;

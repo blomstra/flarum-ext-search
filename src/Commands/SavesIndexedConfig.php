@@ -30,13 +30,13 @@ trait SavesIndexedConfig
         $settingsResponse = $client->indices()->getSettings(['index' => $indexName]);
         $analysis         = Arr::get($settingsResponse, "$indexName.settings.index.analysis", []);
 
-        $analyzer      = Arr::get($analysis, 'analyzer.flarum_analyzer.type', 'english');
         $stemExclusion = Arr::get($analysis, 'analyzer.flarum_analyzer.stem_exclusion', []);
 
         $mappingResponse = $client->indices()->getMapping(['index' => $indexName]);
         $compatVersion   = Arr::get($mappingResponse, "$indexName.mappings._meta.index_compat_version");
+        $language        = Arr::get($mappingResponse, "$indexName.mappings._meta.analyzer_language", 'english');
 
-        $settings->set('blomstra-search.indexed-analyzer', $analyzer);
+        $settings->set('blomstra-search.indexed-analyzer', $language);
         $settings->set('blomstra-search.indexed-stem-exclusion', implode("\n", $stemExclusion));
         $settings->set('blomstra-search.index-compatible', $compatVersion);
     }

@@ -13,6 +13,7 @@
 namespace Blomstra\Search\Seeders;
 
 use Blomstra\Search\Save\Document;
+use Blomstra\Search\TextNormalizer;
 use Flarum\Api\Serializer\DiscussionSerializer;
 use Flarum\Discussion\Discussion;
 use Flarum\Discussion\Event as Core;
@@ -136,8 +137,8 @@ class DiscussionSeeder extends Seeder
             'join_field'      => $this->joinRelation(),
             'id'              => $this->type().':'.$model->id,
             'rawId'           => $model->id,
-            'content'         => $model->title,
-            'title'           => $model->title,
+            'content'         => TextNormalizer::fold($model->title),
+            'title'           => TextNormalizer::fold($model->title),
             'created_at'      => $model->created_at?->toAtomString(),
             'updated_at'      => $model->last_posted_at?->toAtomString(),
             'is_private'      => $model->is_private,

@@ -39,14 +39,10 @@ class BuildCommand extends Command
      * PromoteIndexJob reads it back into blomstra-search.index-compatible so the
      * stored value always reflects the live index, including after a rollback.
      */
-    public const INDEX_COMPAT_VERSION = 'v4';
+    public const INDEX_COMPAT_VERSION = 'v5';
 
     /** Matches Flarum's Search::MIN_SEARCH_LEN — the default minimum query length. */
     public const DEFAULT_MIN_SEARCH_LENGTH = 3;
-
-    /** N-gram bounds for the title autocomplete subfield (not admin-configurable). */
-    private const TITLE_MIN_GRAM = 2;
-    private const TITLE_MAX_GRAM = 15;
 
     /** refresh_interval for a live index — balances search freshness vs. indexing overhead. */
     public const REFRESH_INTERVAL_LIVE = '5s';
@@ -480,7 +476,6 @@ HELP;
         $stemExclusion = array_values(array_filter(array_map('trim', explode("\n", $raw))));
 
         if ($language === 'cjk') {
-            // CJK uses the built-in bigram analyzer; no autocomplete subfield.
             return [
                 'refresh_interval' => self::REFRESH_INTERVAL_LIVE,
                 'analysis'         => [
@@ -498,32 +493,10 @@ HELP;
         }
 
         return [
-            'refresh_interval'     => self::REFRESH_INTERVAL_LIVE,
-            'index.max_ngram_diff' => self::TITLE_MAX_GRAM - self::TITLE_MIN_GRAM,
-            'analysis'             => [
-                'filter' => [
-                    'title_autocomplete_filter' => [
-                        'type'        => 'edge_ngram',
-                        'min_gram'    => self::TITLE_MIN_GRAM,
-                        'max_gram'    => self::TITLE_MAX_GRAM,
-                        'token_chars' => ['letter', 'digit'],
-                    ],
-                ],
+            'refresh_interval' => self::REFRESH_INTERVAL_LIVE,
+            'analysis'         => [
                 'analyzer' => [
-                    // Symmetric language analyzer: used for BOTH index and search on content + title.
-                    'flarum_analyzer'            => $analyzerConfig,
-                    // Title autocomplete index-time: prefix n-grams, no stemming.
-                    'flarum_title_autocomplete'  => [
-                        'type'      => 'custom',
-                        'tokenizer' => 'standard',
-                        'filter'    => ['lowercase', 'title_autocomplete_filter'],
-                    ],
-                    // Title autocomplete search-time: just lowercase — predictable on partial words.
-                    'flarum_title_search' => [
-                        'type'      => 'custom',
-                        'tokenizer' => 'standard',
-                        'filter'    => ['lowercase'],
-                    ],
+                    'flarum_analyzer' => $analyzerConfig,
                 ],
             ],
         ];
@@ -533,29 +506,16 @@ HELP;
     {
         $language = resolve(SettingsRepositoryInterface::class)->get('blomstra-search.analyzer-language') ?: 'english';
 
-        $titleMapping = [
-            'type'     => 'text',
-            'analyzer' => 'flarum_analyzer',
-        ];
-
-        // Only add the autocomplete subfield for non-CJK languages.
-        if ($language !== 'cjk') {
-            $titleMapping['fields'] = [
-                'autocomplete' => [
-                    'type'            => 'text',
-                    'analyzer'        => 'flarum_title_autocomplete',
-                    'search_analyzer' => 'flarum_title_search',
-                ],
-            ];
-        }
-
         return [
-            '_meta'      => ['index_compat_version' => self::INDEX_COMPAT_VERSION],
+            '_meta' => [
+                'index_compat_version' => self::INDEX_COMPAT_VERSION,
+                'analyzer_language'    => $language,
+            ],
             'properties' => [
                 'join_field'       => ['type' => 'join', 'relations' => ['discussion' => 'post']],
                 'discussion_id'    => ['type' => 'integer'],
                 'content'          => ['type' => 'text', 'analyzer' => 'flarum_analyzer'],
-                'title'            => $titleMapping,
+                'title'            => ['type' => 'text', 'analyzer' => 'flarum_analyzer'],
                 'rawId'            => ['type' => 'integer'],
                 'created_at'       => ['type' => 'date'],
                 'updated_at'       => ['type' => 'date'],
