@@ -13,6 +13,7 @@
 namespace Blomstra\Search\Commands;
 
 use Blomstra\Search\Jobs\Job;
+use Blomstra\Search\Jobs\PromoteIndexJob;
 use Blomstra\Search\Jobs\UpdateSearchJob;
 use Blomstra\Search\Seeders\Seeder;
 use Elasticsearch\Client;
@@ -30,13 +31,15 @@ use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
 
 class BuildCommand extends Command
 {
+    use SavesIndexedConfig;
+
     /**
      * Bump this when a mapping change requires a full reindex.
-     * Written into the mapping's _meta.index_compat_version on every build and
-     * read back into blomstra-search.index-compatible by saveIndexedConfig so the
-     * value always reflects the live index — including after a promote/rollback.
+     * Written into the mapping's _meta.index_compat_version on every build;
+     * PromoteIndexJob reads it back into blomstra-search.index-compatible so the
+     * stored value always reflects the live index, including after a rollback.
      */
-    public const INDEX_COMPAT_VERSION = 'v3';
+    public const INDEX_COMPAT_VERSION = 'v4';
 
     /** Matches Flarum's Search::MIN_SEARCH_LEN — the default minimum query length. */
     public const DEFAULT_MIN_SEARCH_LENGTH = 3;
@@ -44,6 +47,12 @@ class BuildCommand extends Command
     /** N-gram bounds for the title autocomplete subfield (not admin-configurable). */
     private const TITLE_MIN_GRAM = 2;
     private const TITLE_MAX_GRAM = 15;
+
+    /** refresh_interval for a live index — balances search freshness vs. indexing overhead. */
+    public const REFRESH_INTERVAL_LIVE = '5s';
+
+    /** refresh_interval during a bulk reindex — reduces segment merges while staging is being filled. */
+    public const REFRESH_INTERVAL_INDEXING = '60s';
 
     protected $signature = 'blomstra:search:index
         {action? : build | promote | rollback | discard | mapping | fill}
@@ -54,6 +63,7 @@ class BuildCommand extends Command
         {--pending}
         {--backup}
         {--only=}
+        {--queue=}
         {--max-id=}
         {--throttle=}
         {--i-am-sure}';
@@ -85,6 +95,7 @@ class BuildCommand extends Command
 
 <comment>Shared seeding options (build / fill):</comment>
   <comment>--only=TYPE</comment>       Seed only this type: <info>discussions</info> or <info>posts</info>
+  <comment>--queue=NAME</comment>      Push jobs onto this queue instead of the default
   <comment>--throttle=N</comment>      Seconds to wait between batches
   <comment>--max-id=N</comment>        Limit seeding to IDs up to this value
 HELP;
@@ -99,6 +110,10 @@ HELP;
 
         /** @var string $alias */
         $alias = $container->make('blomstra.search.elastic_index');
+
+        if ($queue = $this->option('queue')) {
+            Job::$onQueue = $queue;
+        }
 
         if (!$this->argument('action')) {
             $this->call('help', ['command_name' => $this->getName()]);
@@ -187,14 +202,16 @@ HELP;
         $this->runSeeders($seeders, $container->make(Queue::class), $client, $settings, $targetIndex);
 
         if ($stagingBuild) {
+            $staging = $settings->get('blomstra-search.staging-index');
+
             if ($this->option('staging')) {
-                $staging = $settings->get('blomstra-search.staging-index');
                 $this->info("Staging build complete. Drain the queue, then promote '$staging' to live:");
                 $this->line('  php flarum queue:work --stop-when-empty');
                 $this->line('  php flarum blomstra:search:index promote');
             } else {
-                $this->info('Jobs queued. Promoting now (search improves as the queue drains)...');
-                $this->performPromote($client, $alias, $settings);
+                $queue = $container->make(Queue::class);
+                $queue->pushOn(Job::$onQueue, new PromoteIndexJob($alias, $this->option('keep-backup'), Job::$onQueue));
+                $this->info("Jobs queued. '$staging' will be promoted automatically once the queue has drained.");
             }
         }
     }
@@ -223,43 +240,10 @@ HELP;
             return;
         }
 
-        $aliasExists = (bool) $client->indices()->existsAlias(['name' => $alias]);
-        $indexExists = !$aliasExists && (bool) $client->indices()->exists(['index' => $alias]);
+        $job = new PromoteIndexJob($alias, $this->option('keep-backup'));
+        $job->handle($client, $settings, resolve('log'));
 
-        if ($aliasExists) {
-            $result      = $client->indices()->getAlias(['name' => $alias]);
-            $activeIndex = array_key_first($result);
-
-            $client->indices()->updateAliases([
-                'body' => ['actions' => [
-                    ['remove' => ['index' => $activeIndex, 'alias' => $alias]],
-                    ['add'    => ['index' => $staging,     'alias' => $alias]],
-                ]],
-            ]);
-
-            $this->info("'$alias' now points to '$staging'. Promote complete.");
-
-            if ($this->option('keep-backup')) {
-                $settings->set('blomstra-search.backup-index', $activeIndex);
-                $this->info("Kept '$activeIndex' as backup — run rollback to revert, discard --backup to drop it.");
-            } else {
-                $client->indices()->delete(['index' => $activeIndex, 'ignore_unavailable' => true]);
-                $this->info("Deleted old index: $activeIndex");
-            }
-        } else {
-            // One-time migration: concrete index → alias (legacy installs only).
-            if ($indexExists) {
-                $client->indices()->delete(['index' => $alias]);
-                $this->info("Deleted legacy concrete index: $alias");
-            }
-
-            $client->indices()->putAlias(['index' => $staging, 'name' => $alias]);
-            $this->info("'$alias' now points to '$staging'. Promote complete.");
-        }
-
-        $settings->set('blomstra-search.active-index', $staging);
-        $settings->set('blomstra-search.staging-index', null);
-        $this->saveIndexedConfig($client, $settings, $staging);
+        $this->info("'$alias' now points to '$staging'. Promote complete.");
     }
 
     protected function runRollback(Client $client, string $alias, SettingsRepositoryInterface $settings): void
@@ -472,38 +456,20 @@ HELP;
             'body'  => ['settings' => $this->buildIndexSettings($settings)],
         ]);
 
+        $client->indices()->putSettings([
+            'index' => $staging,
+            'body'  => ['index' => ['refresh_interval' => self::REFRESH_INTERVAL_INDEXING]],
+        ]);
+
         $settings->set('blomstra-search.staging-index', $staging);
 
         foreach ($seeders as $seeder) {
             $this->setContinueAt($settings, $seeder->type(), null);
         }
 
-        $this->info("Created staging index: $staging");
+        $this->info("Created staging index: $staging (refresh_interval=" . self::REFRESH_INTERVAL_INDEXING . ")");
 
         return $staging;
-    }
-
-    /**
-     * Persist the analysis config and compat version that are actually live in ES for the
-     * given index. Reading from ES (rather than from Flarum settings) means rollbacks are
-     * also covered: the stored values always reflect the index that is currently aliased,
-     * not the settings at the time the command ran. Indexes built before _meta tracking
-     * existed will yield a null compat version, which correctly triggers the reindex warning.
-     */
-    protected function saveIndexedConfig(Client $client, SettingsRepositoryInterface $settings, string $indexName): void
-    {
-        $settingsResponse = $client->indices()->getSettings(['index' => $indexName]);
-        $analysis         = Arr::get($settingsResponse, "$indexName.settings.index.analysis", []);
-
-        $analyzer      = Arr::get($analysis, 'analyzer.flarum_analyzer.type', 'english');
-        $stemExclusion = Arr::get($analysis, 'analyzer.flarum_analyzer.stem_exclusion', []);
-
-        $mappingResponse = $client->indices()->getMapping(['index' => $indexName]);
-        $compatVersion   = Arr::get($mappingResponse, "$indexName.mappings._meta.index_compat_version");
-
-        $settings->set('blomstra-search.indexed-analyzer', $analyzer);
-        $settings->set('blomstra-search.indexed-stem-exclusion', implode("\n", $stemExclusion));
-        $settings->set('blomstra-search.index-compatible', $compatVersion);
     }
 
     protected function buildIndexSettings(SettingsRepositoryInterface $settings): array
@@ -516,7 +482,8 @@ HELP;
         if ($language === 'cjk') {
             // CJK uses the built-in bigram analyzer; no autocomplete subfield.
             return [
-                'analysis' => [
+                'refresh_interval' => self::REFRESH_INTERVAL_LIVE,
+                'analysis'         => [
                     'analyzer' => [
                         'flarum_analyzer' => ['type' => 'cjk'],
                     ],
@@ -531,6 +498,7 @@ HELP;
         }
 
         return [
+            'refresh_interval'     => self::REFRESH_INTERVAL_LIVE,
             'index.max_ngram_diff' => self::TITLE_MAX_GRAM - self::TITLE_MIN_GRAM,
             'analysis'             => [
                 'filter' => [
@@ -591,6 +559,7 @@ HELP;
                 'rawId'            => ['type' => 'integer'],
                 'created_at'       => ['type' => 'date'],
                 'updated_at'       => ['type' => 'date'],
+                'recency_score'    => ['type' => 'integer'],
                 'is_private'       => ['type' => 'boolean'],
                 'is_sticky'        => ['type' => 'boolean'],
                 'groups'           => ['type' => 'integer'],

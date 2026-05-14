@@ -10,43 +10,37 @@ import type Mithril from 'mithril';
  * the search dropdown.
  */
 export default class DiscussionsSearchSource implements SearchSource {
-  /**
-   * Map of lowercase search queries to their respective model results
-   */
   protected results = new Map<string, any[]>();
 
-  /**
-   * Model name used for assembling API endpoint URL, and for frontend DOM.
-   */
   private type = 'discussions';
 
+  private latestQuery: string = '';
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
   async search(query: string): Promise<void> {
-    // Suppress ES instant results when "search within comments" is ON;
-    // only usernames are shown in that mode.
-    if (app.forum.attribute('blomstraSearchPostBodies')) {
-      return;
-    }
-
     query = query.toLowerCase();
-
+    this.latestQuery = query;
     this.results.set(query, []);
 
+    await new Promise<void>((resolve) => {
+      if (this.debounceTimer) clearTimeout(this.debounceTimer);
+      this.debounceTimer = setTimeout(resolve, 800);
+    });
+
+    // A newer query arrived while debouncing — let that one resolve instead.
+    if (this.latestQuery !== query) return;
+
     const params = {
-      filter: { q: query, autocomplete: 1 },
+      filter: { q: query },
       page: { limit: 3 },
       include: 'mostRelevantPost',
     };
 
-    // Construct API search URI
     const url = `${app.forum.attribute('apiUrl')}/blomstra/search/${this.type}`;
 
-    // Make API GET request
     const results = await app.request({ params, url, method: 'GET' });
-
-    // Parse API response into models and push to store
     const models = app.store.pushPayload(results);
 
-    // Add models to results map
     this.results.set(query, models);
   }
 
@@ -72,7 +66,7 @@ export default class DiscussionsSearchSource implements SearchSource {
     return [
       <li className="Dropdown-header">{app.translator.trans('core.forum.search.discussions_heading')}</li>,
       <li>
-        <LinkButton icon="fas fa-search" href={app.route('index', { q: query, sort: 'latest' })}>
+        <LinkButton icon="fas fa-search" href={app.route('index', { q: query })}>
           {app.translator.trans('core.forum.search.all_discussions_button', { query })}
         </LinkButton>
       </li>,

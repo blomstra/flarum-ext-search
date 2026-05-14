@@ -17,14 +17,18 @@ export default function extendDiscussionState() {
       ...params.page,
     };
 
-    // Default to latest sort when searching without an explicit sort parameter.
-    // Matches the backend default and keeps the dropdown label in sync.
-    if (!params.sort) {
-      params.sort = '-lastPostedAt';
-    }
-
     if (Array.isArray(params.include)) {
       params.include = params.include.join(',');
+    }
+
+    // Always request mostRelevantPost when searching so core can render a
+    // highlighted excerpt regardless of the active sort order.
+    if (params.filter?.q) {
+      const includes = params.include ? params.include.split(',') : [];
+      if (!includes.includes('mostRelevantPost')) {
+        includes.push('mostRelevantPost');
+        params.include = includes.join(',');
+      }
     }
 
     // Construct API search URI

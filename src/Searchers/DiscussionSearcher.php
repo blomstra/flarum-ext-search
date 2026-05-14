@@ -27,6 +27,6 @@ class DiscussionSearcher extends Searcher
 
     public function boost(): float
     {
-        return 1.5;
+        return 3.0;
     }
 }

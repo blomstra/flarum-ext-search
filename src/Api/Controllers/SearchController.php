@@ -78,11 +78,6 @@ class SearchController extends ListDiscussionsController
         $offset  = $this->extractOffset($request);
         $include = array_merge($this->extractInclude($request), ['state']);
 
-        // Autocomplete path: fast prefix match on title.autocomplete only.
-        if (!empty($filters['autocomplete']) && !empty($search)) {
-            return $this->handleAutocomplete($search, $actor, $limit, $offset, $include, $document, $request);
-        }
-
         $knownSortFields = array_merge(array_values($this->translateSort), ['rawId']);
         $logger          = resolve(LoggerInterface::class);
 
@@ -108,15 +103,10 @@ class SearchController extends ListDiscussionsController
             }
         }
 
-        // Default to latest when no explicit sort is requested. This lets has_child use
-        // score_mode:none, which skips child scoring entirely and lets ES short-circuit
-        // early on large corpora. Relevance is still available via sort=relevant if added.
-        if (empty($sorts)) {
-            $needsScoring = false;
-            $phpSortField = 'updated_at';
-            $phpSortDir   = 'desc';
-            $sorts[]      = new Sort('updated_at', 'desc');
-        }
+        // No explicit sort: default to relevance. ES orders by _score desc;
+        // PHP re-sorts by weight (= _score) via the null branch in ::when().
+        // has_child uses score_mode:max so the best-matching post score propagates
+        // to the parent without letting many weak post matches snowball.
 
         $query = BoolQuery::create()
             // Always restrict to discussion documents; posts are only searched via has_child.
@@ -140,6 +130,28 @@ class SearchController extends ListDiscussionsController
         // enough results in sort order, avoiding a full-index count on every query.
         $payload = $builder->getPayload();
         $payload['track_total_hits'] = false;
+
+        // Blend recency into relevance scoring. field_value_factor requires a numeric
+        // field — it can't do date math — so recency_score is precomputed at index time
+        // as max(0, 365 - days_since_last_post). factor 6/365 adds ~6 to a same-day
+        // discussion, roughly equal to a title phrase match.
+        if ($needsScoring) {
+            $payload['query'] = [
+                'function_score' => [
+                    'query'      => $payload['query'],
+                    'functions'  => [[
+                        'field_value_factor' => [
+                            'field'    => 'recency_score',
+                            'factor'   => 6.0 / 365,
+                            'modifier' => 'none',
+                            'missing'  => 0,
+                        ],
+                    ]],
+                    'score_mode' => 'sum',
+                    'boost_mode' => 'sum',
+                ],
+            ];
+        }
 
         $response = $this->elastic->search([
             'index' => resolve('blomstra.search.elastic_index'),
@@ -223,85 +235,6 @@ class SearchController extends ListDiscussionsController
     }
 
     /**
-     * Fast autocomplete path: match prefix n-grams on title.autocomplete only.
-     * No has_child, no phrase scoring — a single MatchQuery suffices.
-     */
-    protected function handleAutocomplete(
-        string $search,
-        User $actor,
-        int $limit,
-        int $offset,
-        array $include,
-        Document $document,
-        ServerRequestInterface $request
-    ): mixed {
-        $query = BoolQuery::create()
-            ->add(TermQuery::create('join_field', 'discussion'), 'filter');
-
-        $query->add($this->buildAutocompleteQuery($search), 'must');
-
-        $this->addFilters($query, $actor, []);
-
-        $payload         = (new Builder($this->elastic))
-            ->index(resolve('blomstra.search.elastic_index'))
-            ->addQuery($query)
-            ->addSort(new Sort('updated_at', 'desc'))
-            ->getPayload();
-
-        $response = $this->elastic->search([
-            'index' => resolve('blomstra.search.elastic_index'),
-            'size'  => $limit + 1,
-            'from'  => $offset,
-            'body'  => $payload,
-        ]);
-
-        Discussion::setStateUser($actor);
-
-        $results = Collection::make(Arr::get($response, 'hits.hits'))
-            ->map(fn ($hit) => [
-                'discussion_id'        => Str::after($hit['_id'], 'discussions:'),
-                'most_relevant_post_id' => null,
-                'weight'               => Arr::get($hit, 'sort.0', 0),
-            ]);
-
-        $document->addPaginationLinks(
-            $this->uri->to('api')->route('blomstra.search', ['type' => 'discussions']),
-            $request->getQueryParams(),
-            $offset,
-            $limit,
-            $results->count() > $limit ? null : 0
-        );
-
-        $results = $results->take($limit);
-
-        $discussions = Discussion::query()
-            ->when(
-                $actor->isGuest() || !$actor->hasPermission('discussion.hide'),
-                fn ($q) => $q->whereNull('hidden_at')
-            )
-            ->whereIn('id', $results->pluck('discussion_id')->filter())
-            ->get()
-            ->each(function (Discussion $discussion) use ($results) {
-                $result = $results->firstWhere('discussion_id', $discussion->id);
-                $discussion->most_relevant_post_id = $result['most_relevant_post_id'] ?? $discussion->first_post_id;
-                $discussion->weight = $result['weight'] ?? 0;
-            })
-            ->sortByDesc('updated_at')
-            ->unique();
-
-        $this->loadRelations($discussions, $include);
-
-        return $discussions;
-    }
-
-    protected function buildAutocompleteQuery(string $search): MatchQuery
-    {
-        return (new MatchQuery('title.autocomplete', $search))
-            ->operator('and')
-            ->boost(1.0);
-    }
-
-    /**
      * Build the text-matching portion of the query.
      *
      * Discussion titles are matched directly (filtered to join_field=discussion).
@@ -320,6 +253,9 @@ class SearchController extends ListDiscussionsController
 
         if ($this->discussionSearcher?->enabled()) {
             $textQuery->add($this->buildShouldClauses($search, $this->discussionSearcher->boost()), 'should');
+            // Extra boost for explicit title field — only discussion docs have this field,
+            // so it adds bonus score specifically when the title matches.
+            $textQuery->add($this->buildShouldClauses($search, $this->discussionSearcher->boost() * 2, 'title'), 'should');
         }
 
         if ($this->postSearcher?->enabled()) {
@@ -335,7 +271,7 @@ class SearchController extends ListDiscussionsController
             $postQuery->minimumShouldMatch(1);
 
             $textQuery->add(
-                HasChildQuery::create('post', $postQuery, $needsScoring ? 'sum' : 'none')->withInnerHits(),
+                HasChildQuery::create('post', $postQuery, $needsScoring ? 'max' : 'none')->withInnerHits(),
                 'should'
             );
         }
@@ -343,15 +279,15 @@ class SearchController extends ListDiscussionsController
         return $textQuery;
     }
 
-    protected function buildShouldClauses(string $search, float $boost): BoolQuery
+    protected function buildShouldClauses(string $search, float $boost, string $field = 'content'): BoolQuery
     {
         $should = BoolQuery::create();
 
         if ($this->matchSentences) {
-            $should->add((new MatchPhraseQuery('content', $search))->boost(2 * $boost), 'should');
+            $should->add((new MatchPhraseQuery($field, $search))->boost(2 * $boost), 'should');
         }
         if ($this->matchWords) {
-            $should->add((new MatchQuery('content', $search))->operator('and')->boost(1.8 * $boost), 'should');
+            $should->add((new MatchQuery($field, $search))->operator('and')->boost(1.8 * $boost), 'should');
         }
 
         return $should;

@@ -22,6 +22,12 @@ abstract class Job extends AbstractJob
 
     public static ?string $onQueue = null;
 
+    /** Retry up to 5 times on transient ES failures (e.g. NoAliveNodesException). */
+    public int $tries = 5;
+
+    /** Wait 65 s between retries — outlasts the StaticNoPingConnectionPool dead-node window (default 60 s). */
+    public int $backoff = 65;
+
     /**
      * @param string|null $targetIndex  Explicit index name for blue-green builds.
      *                                  Defaults to the configured alias when null.

@@ -13,7 +13,9 @@ app.initializers.add('blomstra-search', () => {
   extend(Search.prototype, 'sourceItems', function (this: Search<SearchAttrs>, items: ItemList<SearchSource>) {
     // app.forum is not available during initializers (it is set after they run),
     // so read the setting lazily here, at first render time.
-    const minLength = (app.forum.attribute('blomstraSearchMinLength') as number) || Search.MIN_SEARCH_LEN;
+    // Default to 4 chars for the live dropdown — shorter queries trigger too many
+    // relevance queries before the user has finished typing.
+    const minLength = (app.forum.attribute('blomstraSearchMinLength') as number) || 4;
     if (minLength !== Search.MIN_SEARCH_LEN) {
       (Search as any).MIN_SEARCH_LEN = minLength;
     }

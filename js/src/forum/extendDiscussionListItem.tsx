@@ -8,18 +8,10 @@ export default function extendDiscussionListItem() {
 
     if (!params.q) return;
 
-    const hasFieldSort = params.sort && params.sort !== 'relevance';
-
-    if (hasFieldSort) {
-      // Field sort active (latest, oldest, top, …): replace excerpt with TerminalPost.
-      // An excerpt is meaningless when results are ordered by date/count rather than relevance.
-      items.remove('excerpt');
-      if (!items.has('terminalPost')) {
-        items.add('terminalPost', <TerminalPost discussion={this.attrs.discussion} lastPost={!this.showFirstPost()} />);
-      }
-    } else if (!items.has('excerpt')) {
-      // Relevance mode but no excerpt (mostRelevantPost was null or non-comment type).
-      // Fall back to TerminalPost so the info section is never silently empty.
+    // Core's infoItems() already adds a highlighted 'excerpt' when params.q is set
+    // and a comment-type mostRelevantPost is available. We only add a TerminalPost
+    // fallback when neither is present so the info section is never silently empty.
+    if (!items.has('excerpt') && !items.has('terminalPost')) {
       items.add('terminalPost', <TerminalPost discussion={this.attrs.discussion} lastPost={true} />);
     }
   });

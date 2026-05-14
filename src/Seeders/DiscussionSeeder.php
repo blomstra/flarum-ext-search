@@ -16,6 +16,8 @@ use Blomstra\Search\Save\Document;
 use Flarum\Api\Serializer\DiscussionSerializer;
 use Flarum\Discussion\Discussion;
 use Flarum\Discussion\Event as Core;
+use Flarum\Post\Event as PostCore;
+use Carbon\Carbon;
 use Flarum\Extension\ExtensionManager;
 use Flarum\Group\Group;
 use Flarum\Group\Permission;
@@ -76,6 +78,20 @@ class DiscussionSeeder extends Seeder
         ], function ($event) use ($callable) {
             return $callable($event->discussion);
         });
+
+        // Re-index the parent discussion when a post is created, deleted, or restored so
+        // that updated_at and recency_score stay current in the index.
+        $events->listen([
+            PostCore\Posted::class,
+            PostCore\Deleted::class,
+            PostCore\Hidden::class,
+            PostCore\Restored::class,
+        ], function ($event) use ($callable) {
+            $discussion = $event->post->discussion;
+            if ($discussion) {
+                $callable($discussion->fresh());
+            }
+        });
     }
 
     public static function viewingOn(Dispatcher $events, callable $callable): void
@@ -128,6 +144,7 @@ class DiscussionSeeder extends Seeder
             'user_id'         => $model->user_id,
             'groups'          => $this->groupsForDiscussion($model),
             'comment_count'   => $model->comment_count,
+            'recency_score'   => $this->computeRecencyScore($model),
         ]);
 
         if ($this->extensionEnabled('flarum-tags')) {
@@ -154,6 +171,14 @@ class DiscussionSeeder extends Seeder
         }
 
         return $document;
+    }
+
+    private function computeRecencyScore(Discussion $model): int
+    {
+        $reference = $model->last_posted_at ?? $model->created_at;
+        $days = $reference ? (int) $reference->diffInDays(Carbon::now()) : 365;
+
+        return max(0, 365 - $days);
     }
 
     /**
