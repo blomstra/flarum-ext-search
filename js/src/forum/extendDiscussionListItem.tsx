@@ -24,7 +24,7 @@ function buildFoldRegex(phrase: string): RegExp {
   function toPattern(str: string): string {
     return str
       .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // escape regex special chars
-      .replace(/./gsu, '$&[̀-ͯ]*');  // allow combining diacritics after each char
+      .replace(/./gsu, '$&[̀-ͯ]*'); // allow combining diacritics after each char
   }
 
   const fullPattern = toPattern(folded);
@@ -47,12 +47,7 @@ export default function extendDiscussionListItem() {
     if (!this.attrs.params.q || !items.has('title')) return;
 
     const discussion = this.attrs.discussion;
-    items.setContent(
-      'title',
-      <h2 className="DiscussionListItem-title">
-        {highlight(discussion.title().normalize('NFD'), this.highlightRegExp)}
-      </h2>
-    );
+    items.setContent('title', <h2 className="DiscussionListItem-title">{highlight(discussion.title().normalize('NFD'), this.highlightRegExp)}</h2>);
   });
 
   // Re-render the excerpt against NFD-normalised content so combining diacritics
@@ -63,10 +58,7 @@ export default function extendDiscussionListItem() {
     if (items.has('excerpt')) {
       const post = this.attrs.discussion.mostRelevantPost() || this.attrs.discussion.firstPost();
       if (post && post.contentType() === 'comment') {
-        items.setContent(
-          'excerpt',
-          highlight((post.contentPlain() ?? '').normalize('NFD'), this.highlightRegExp, 175)
-        );
+        items.setContent('excerpt', highlight((post.contentPlain() ?? '').normalize('NFD'), this.highlightRegExp, 175));
       }
     } else if (!items.has('terminalPost')) {
       items.add('terminalPost', <TerminalPost discussion={this.attrs.discussion} lastPost={true} />);
