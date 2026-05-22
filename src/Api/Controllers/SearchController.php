@@ -240,7 +240,8 @@ class SearchController extends ListDiscussionsController
     /**
      * Build the text-matching portion of the query.
      *
-     * Discussion titles are matched directly (filtered to join_field=discussion).
+     * Discussion titles are matched directly (filtered to join_field=discussion) with an
+     * extreme boost so exact or near-exact title matches dominate the result list.
      * Post bodies are matched via has_child. When $needsScoring is true (no explicit
      * sort, i.e. relevance ordering), score_mode=sum accumulates child scores onto the
      * parent so that discussions with many strongly-matching posts rank higher. When
@@ -257,9 +258,13 @@ class SearchController extends ListDiscussionsController
         if ($this->discussionSearcher?->enabled()) {
             $boost = $this->discussionSearcher->boost();
             $textQuery->add($this->buildShouldClauses($search, $boost), 'should');
-            // Extra boost for explicit title field — only discussion docs have this field,
-            // so it adds bonus score specifically when the title matches.
-            $textQuery->add($this->buildShouldClauses($search, $boost * 2, 'title'), 'should');
+            // Title field gets an extreme multiplier so exact/near-exact title matches
+            // dominate ranking over post-body matches. Discussion docs are the only ones
+            // with a title field, so this bonus is title-exclusive.
+            $textQuery->add($this->buildShouldClauses($search, $boost * 6, 'title'), 'should');
+            // Hard exact-phrase-on-title clause: single most powerful signal, ensures
+            // queries whose terms appear verbatim in a title surface those discussions first.
+            $textQuery->add((new MatchPhraseQuery('title', $search))->boost($boost * 20), 'should');
 
             foreach ($explicitPhrases as $phrase) {
                 $textQuery->add((new MatchPhraseQuery('title', $phrase))->boost(10 * $boost), 'should');
