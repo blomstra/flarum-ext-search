@@ -4,12 +4,30 @@ import { override } from 'flarum/common/extend';
 
 import DiscussionListState from 'flarum/forum/states/DiscussionListState';
 
+// A query counts as a real fulltext search only if, after removing Flarum gambit
+// operators (tag:foo, is:private, byobu:bar, author:baz, …), something remains.
+// This mirrors SearchController::getSearch() on the backend so the two agree on
+// what warrants an Elasticsearch query. Gambit-only lists (e.g. the byobu inbox,
+// which sends "byobu:<slug> is:private") stay on the native Flarum endpoint, whose
+// database sorting is authoritative — routing them through ES adds load and risks
+// diverging from core ordering.
+function hasFulltextTerm(q: unknown): boolean {
+  return (
+    typeof q === 'string' &&
+    q
+      .split(' ')
+      .filter((token) => token && !/^\w+:/.test(token))
+      .join(' ')
+      .trim().length > 0
+  );
+}
+
 export default function extendDiscussionState() {
   override(DiscussionListState.prototype, 'loadPage', async function (this: DiscussionListState, original, page: number = 1) {
     const preloaded = app.data.apiDocument || null;
 
-    // If existing payload is given or no search is made,  fallback on native page.
-    if (preloaded || !this.requestParams()?.filter?.q) return original.call(this, page);
+    // If existing payload is given or no fulltext search is made, fall back on native page.
+    if (preloaded || !hasFulltextTerm(this.requestParams()?.filter?.q)) return original.call(this, page);
 
     const params = this.requestParams();
     params.page = {

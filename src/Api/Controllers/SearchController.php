@@ -82,8 +82,6 @@ class SearchController extends ListDiscussionsController
         $knownSortFields = array_merge(array_values($this->translateSort), ['rawId']);
         $logger          = resolve(LoggerInterface::class);
 
-        $phpSortField = null;
-        $phpSortDir   = 'desc';
         $needsScoring = true;
         $sorts        = [];
 
@@ -97,11 +95,6 @@ class SearchController extends ListDiscussionsController
 
             $sorts[]      = new Sort($translated, $direction);
             $needsScoring = false;
-
-            if ($phpSortField === null && $translated !== 'rawId') {
-                $phpSortField = $translated;
-                $phpSortDir   = $direction;
-            }
         }
 
         // No explicit sort: default to relevance. ES orders by _score desc;
@@ -200,6 +193,14 @@ class SearchController extends ListDiscussionsController
 
         $results = $results->take($limit);
 
+        // Elasticsearch already ordered the hits authoritatively (by the requested
+        // field sort or by _score for relevance). The whereIn() re-fetch below loses
+        // that order, so restore it from the hit sequence. Re-sorting by Eloquent
+        // attributes instead would break for any sort whose ES field name differs from
+        // the model attribute — e.g. ES "updated_at" is the model's "last_posted_at",
+        // which silently produced a no-op sort (and thus scrambled "Latest" ordering).
+        $order = $results->pluck('discussion_id')->values()->flip();
+
         $discussions = Discussion::query()
             ->when(
                 $actor->isGuest() || !$actor->hasPermission('discussion.hide'),
@@ -214,13 +215,9 @@ class SearchController extends ListDiscussionsController
                     ?? $discussion->first_post_id;
                 $discussion->weight = $result['weight'] ?? 0;
             })
-            ->keyBy('id')
-            ->when(
-                $phpSortField,
-                fn ($c) => $phpSortDir === 'desc' ? $c->sortByDesc($phpSortField) : $c->sortBy($phpSortField),
-                fn ($c) => $c->sortByDesc('weight')
-            )
-            ->unique();
+            ->unique('id')
+            ->sortBy(fn (Discussion $discussion) => $order[$discussion->id] ?? PHP_INT_MAX)
+            ->values();
 
         $this->loadRelations($discussions, $include);
 
