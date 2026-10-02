@@ -39,15 +39,19 @@ class Provider extends AbstractServiceProvider
             Seeders\CommentSeeder::class,
         ], 'blomstra.search.seeders');
 
-        /** @var SettingsRepositoryInterface $settings */
-        $settings = $this->container->make(SettingsRepositoryInterface::class);
+        $this->container->singleton(Connection::class, function (Container $container) {
+            return Connection::resolve(
+                $container->make(Config::class),
+                $container->make(SettingsRepositoryInterface::class)
+            );
+        });
 
-        /** @var Config $config */
-        $config = $this->container->make(Config::class);
+        $this->container->singleton(Elastic::class, function (Container $container) {
+            /** @var Connection $connection */
+            $connection = $container->make(Connection::class);
 
-        $this->container->singleton(Elastic::class, function (Container $container) use ($settings, $config) {
             $builder = ClientBuilder::create()
-                ->setHosts([$settings->get('blomstra-search.elastic-endpoint')])
+                ->setHosts([$connection->endpoint()])
                 ->setConnectionParams([
                     'client' => [
                         'connect_timeout' => 2,  // fail fast if ES is unreachable
@@ -55,24 +59,20 @@ class Provider extends AbstractServiceProvider
                     ],
                 ]);
 
-            if ($config->inDebugMode()) {
+            if ($container->make(Config::class)->inDebugMode()) {
                 $builder->setLogger($container->make(LoggerInterface::class));
             }
 
-            if ($settings->get('blomstra-search.elastic-username')) {
-                $builder->setBasicAuthentication(
-                    $settings->get('blomstra-search.elastic-username'),
-                    $settings->get('blomstra-search.elastic-password')
-                );
+            if ($connection->username()) {
+                $builder->setBasicAuthentication($connection->username(), (string) $connection->password());
             }
 
             return $builder->build();
         });
 
-        $this->container->instance(
-            'blomstra.search.elastic_index',
-            $settings->get('blomstra-search.elastic-index', 'flarum')
-        );
+        $this->container->bind('blomstra.search.elastic_index', function (Container $container) {
+            return $container->make(Connection::class)->index();
+        });
 
         $this->container->extend(
             Client::class,

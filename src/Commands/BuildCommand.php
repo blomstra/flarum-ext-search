@@ -12,6 +12,7 @@
 
 namespace Blomstra\Search\Commands;
 
+use Blomstra\Search\Elasticsearch\AliasLookup;
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\PromoteIndexJob;
 use Blomstra\Search\Jobs\UpdateSearchJob;
@@ -177,7 +178,7 @@ HELP;
             return;
         }
 
-        $aliasExists = (bool) $client->indices()->existsAlias(['name' => $alias]);
+        $aliasExists = (bool) $client->indices()->existsAlias(AliasLookup::params($alias));
         $indexExists = !$aliasExists && (bool) $client->indices()->exists(['index' => $alias]);
 
         if (!$aliasExists && !$indexExists) {
@@ -251,7 +252,7 @@ HELP;
             return;
         }
 
-        $result      = $client->indices()->getAlias(['name' => $alias]);
+        $result      = $client->indices()->getAlias(AliasLookup::params($alias));
         $activeIndex = array_key_first($result);
 
         $client->indices()->updateAliases([
@@ -397,9 +398,14 @@ HELP;
     ): string {
         $concrete = $alias . '_' . date('YmdHis');
 
+        // With the mapping, not only the settings: saveIndexedConfig() below reads the analyzer
+        // and compat version from the mapping's _meta, which must exist by then.
         $client->indices()->create([
             'index' => $concrete,
-            'body'  => ['settings' => $this->buildIndexSettings($settings)],
+            'body'  => [
+                'settings' => $this->buildIndexSettings($settings),
+                'mappings' => $this->mappingProperties(),
+            ],
         ]);
 
         $client->indices()->putAlias(['index' => $concrete, 'name' => $alias]);

@@ -28,9 +28,11 @@ use Flarum\Extension\ExtensionManager;
 use Flarum\Group\Group;
 use Flarum\Http\RequestUtil;
 use Flarum\Http\UrlGenerator;
+use Flarum\Post\Post;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\Tags\Tag;
 use Flarum\User\User;
+use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -47,6 +49,9 @@ class SearchController extends ListDiscussionsController
 {
     public $serializer = DiscussionSerializer::class;
 
+    /** Seconds before a discussion dropped by the visibility check is logged again. */
+    protected const FILTERED_HIT_LOG_INTERVAL = 86400;
+
     protected array $translateSort = [
         'lastPostedAt' => 'updated_at',
         'createdAt'    => 'created_at',
@@ -59,7 +64,7 @@ class SearchController extends ListDiscussionsController
     protected ?Searcher $discussionSearcher;
     protected ?Searcher $postSearcher;
 
-    public function __construct(protected Client $elastic, protected UrlGenerator $uri, Container $container, SettingsRepositoryInterface $settings)
+    public function __construct(protected Client $elastic, protected UrlGenerator $uri, Container $container, SettingsRepositoryInterface $settings, protected Cache $cache)
     {
         $this->matchSentences = true;
         $this->matchWords     = true;
@@ -201,18 +206,32 @@ class SearchController extends ListDiscussionsController
         // which silently produced a no-op sort (and thus scrambled "Latest" ordering).
         $order = $results->pluck('discussion_id')->values()->flip();
 
-        $discussions = Discussion::query()
-            ->when(
-                $actor->isGuest() || !$actor->hasPermission('discussion.hide'),
-                fn ($q) => $q->whereNull('hidden_at')
-            )
-            ->whereIn('id', $results->pluck('discussion_id')->filter())
-            ->get()
-            ->each(function (Discussion $discussion) use ($results) {
-                $result = $results->firstWhere('discussion_id', $discussion->id);
+        // The index is a copy and can be stale: a discussion hidden, moved to a restricted tag
+        // or taken off a private discussion's recipients after it was indexed, or one whose
+        // visibility comes from an extension the index knows nothing about. So every hit goes
+        // through the same visibility scopes Flarum's own search applies, discussions and the
+        // matched post alike. A hit the actor may not see is dropped, never shown. The pagination
+        // links above count the index's hits, so a dropped hit shortens the page but never hides
+        // the next one.
+        $esDiscussionIds = $results->pluck('discussion_id')->filter()->map(fn ($id) => (int) $id);
 
-                $discussion->most_relevant_post_id = $result['most_relevant_post_id']
-                    ?? $discussion->first_post_id;
+        $discussions = Discussion::query()
+            ->whereVisibleTo($actor)
+            ->whereIn('id', $esDiscussionIds)
+            ->get();
+
+        $this->logFilteredHits($logger, $actor, $esDiscussionIds, $discussions->pluck('id'));
+
+        $visiblePostIds = $this->visiblePostIds($actor, $results->pluck('most_relevant_post_id')->filter());
+
+        $discussions = $discussions
+            ->each(function (Discussion $discussion) use ($results, $visiblePostIds) {
+                $result = $results->firstWhere('discussion_id', $discussion->id);
+                $postId = (int) ($result['most_relevant_post_id'] ?? 0);
+
+                $discussion->most_relevant_post_id = isset($visiblePostIds[$postId])
+                    ? $postId
+                    : $discussion->first_post_id;
                 $discussion->weight = $result['weight'] ?? 0;
             })
             ->unique('id')
@@ -359,6 +378,46 @@ class SearchController extends ListDiscussionsController
         }
 
         $query->add($subQuery, 'filter');
+    }
+
+    /**
+     * The matched posts the actor may see, keyed by id. A post can be hidden or private while its
+     * discussion is visible, and the index may not know it yet.
+     */
+    protected function visiblePostIds(User $actor, Collection $postIds): array
+    {
+        if ($postIds->isEmpty()) {
+            return [];
+        }
+
+        return Post::query()
+            ->whereVisibleTo($actor)
+            ->whereIn('id', $postIds)
+            ->pluck('id')
+            ->flip()
+            ->all();
+    }
+
+    /**
+     * Hits dropped by the visibility check mean the index is stale, or an extension restricts
+     * visibility in a way the index does not model. Neither leaks anything; both are worth knowing.
+     * A systematic cause (flarum/approval's unapproved discussions are indexed) would drop the same
+     * discussion on every search, so each one is logged at most once a day.
+     */
+    protected function logFilteredHits(LoggerInterface $logger, User $actor, Collection $esIds, Collection $visibleIds): void
+    {
+        $filtered = $esIds->diff($visibleIds)
+            ->filter(fn (int $id) => $this->cache->add("blomstra-search.filtered-hit.$id", true, self::FILTERED_HIT_LOG_INTERVAL))
+            ->values();
+
+        if ($filtered->isEmpty()) {
+            return;
+        }
+
+        $logger->warning('blomstra/search: search index returned discussions the actor may not see', [
+            'filtered_ids' => $filtered->all(),
+            'actor_id'     => $actor->id,
+        ]);
     }
 
     protected function getGroups(User $actor): Collection

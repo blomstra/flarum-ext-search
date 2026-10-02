@@ -14,6 +14,7 @@ namespace Blomstra\Search\Jobs;
 
 use Blomstra\Search\Commands\BuildCommand;
 use Blomstra\Search\Commands\SavesIndexedConfig;
+use Blomstra\Search\Elasticsearch\AliasLookup;
 use Elasticsearch\Client;
 use Flarum\Queue\AbstractJob;
 use Flarum\Settings\SettingsRepositoryInterface;
@@ -42,11 +43,11 @@ class PromoteIndexJob extends AbstractJob
             return;
         }
 
-        $aliasExists = (bool) $client->indices()->existsAlias(['name' => $this->alias]);
+        $aliasExists = (bool) $client->indices()->existsAlias(AliasLookup::params($this->alias));
         $indexExists = !$aliasExists && (bool) $client->indices()->exists(['index' => $this->alias]);
 
         if ($aliasExists) {
-            $result      = $client->indices()->getAlias(['name' => $this->alias]);
+            $result      = $client->indices()->getAlias(AliasLookup::params($this->alias));
             $activeIndex = array_key_first($result);
 
             $client->indices()->updateAliases([

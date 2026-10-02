@@ -21,7 +21,8 @@ return [
         ->js(__DIR__.'/js/dist/forum.js'),
     (new Flarum\Frontend('admin'))
         ->js(__DIR__.'/js/dist/admin.js')
-        ->css(__DIR__.'/resources/less/admin.less'),
+        ->css(__DIR__.'/resources/less/admin.less')
+        ->content(Content\AdminPayload::class),
 
     new Flarum\Locales(__DIR__.'/resources/locale'),
 

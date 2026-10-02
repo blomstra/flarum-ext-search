@@ -26,8 +26,11 @@
     "require": {
         "php": ">= 8.0",
         "flarum/core": "^1.2.0",
-        "elasticsearch/elasticsearch": "7.*",
+        "elasticsearch/elasticsearch": "^7.17",
         "spatie/elasticsearch-query-builder": "^1.3.0"
+    },
+    "require-dev": {
+        "flarum/testing": "^1.0"
     },
     "extra": {
         "flarum-extension": {
@@ -45,5 +48,28 @@
         "psr-4": {
             "Blomstra\\Search\\": "src/"
         }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Blomstra\\Search\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": [
+            "@test:unit",
+            "@test:integration"
+        ],
+        "test:unit": "phpunit -c tests/phpunit.unit.xml",
+        "test:integration": "phpunit -c tests/phpunit.integration.xml",
+        "test:setup": "@php tests/integration/setup.php"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts-descriptions": {
+        "test": "Runs all tests.",
+        "test:unit": "Runs the unit tests.",
+        "test:integration": "Runs the integration tests against a MySQL database (DB_* env vars).",
+        "test:setup": "Installs Flarum into the test database for the integration tests."
     }
 }

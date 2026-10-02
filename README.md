@@ -23,6 +23,50 @@ composer require blomstra/search:*
 
 Enable the extension in the admin area and configure the Elasticsearch endpoint and index name in the extension settings.
 
+### Connection from config.php (hosts)
+
+A host that provisions the search server for its forums can provide the connection in
+`config.php` instead of the admin settings. When `search.endpoint` is set, the whole connection
+comes from there and the four connection settings are ignored, so credentials never have to be
+stored in the database:
+
+```php
+'search' => [
+    'endpoint' => 'http://opensearch:9200', // always with a port: without one the client uses 9200, even for https
+    'username' => 'forum-1',
+    'password' => '...',
+    'index'    => 'forum-1',                // alias name, default `flarum`
+    'managed'  => true,                     // optional, see below
+],
+```
+
+The admin page then shows a note that the connection is set in config.php instead of the four
+connection fields, which would be ignored. With `managed` set, the note says the host manages the
+connection instead.
+
+Only the connection moves. What the build command records about the index (the live, staging
+and backup index names, the indexed analyzer) stays in the database settings, whichever
+connection wrote it.
+
+## Development
+
+```bash
+composer test:unit                 # no database needed
+composer test:setup                # once: installs Flarum into the test database (DB_* env vars)
+composer test:integration
+```
+
+The visibility tests answer searches from a fake search server. The round-trip tests (build,
+rebuild, rollback, fill, live updates, search) run against a real server, and are skipped unless
+it is given, with credentials limited to the index prefix the way a host would issue them:
+
+```bash
+SEARCH_TEST_ENDPOINT=http://localhost:9200 SEARCH_TEST_USERNAME=forum-1 \
+SEARCH_TEST_PASSWORD=... SEARCH_TEST_INDEX=forum-1 composer test:integration
+```
+
+Every index matching `SEARCH_TEST_INDEX*` is deleted before each test.
+
 ## Setting up the index
 
 ### First install

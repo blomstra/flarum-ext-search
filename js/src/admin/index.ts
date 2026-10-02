@@ -4,7 +4,7 @@ import DashboardPage from 'flarum/admin/components/DashboardPage';
 import DashboardWidget from 'flarum/admin/components/DashboardWidget';
 import Alert from 'flarum/common/components/Alert';
 
-const REQUIRED_INDEX_COMPAT = 'v3';
+const REQUIRED_INDEX_COMPAT = 'v5';
 
 class ReindexWarningWidget extends DashboardWidget {
   className() {
@@ -92,26 +92,40 @@ app.initializers.add('blomstra-search', () => {
         app.translator.trans('blomstra-search.admin.index-settings-changed')
       );
     })
-    .registerSetting({
-      setting: 'blomstra-search.elastic-endpoint',
-      label: app.translator.trans('blomstra-search.admin.elastic-endpoint'),
-      type: 'input',
-    })
-    .registerSetting({
-      setting: 'blomstra-search.elastic-username',
-      label: app.translator.trans('blomstra-search.admin.elastic-username'),
-      type: 'input',
-    })
-    .registerSetting({
-      setting: 'blomstra-search.elastic-password',
-      label: app.translator.trans('blomstra-search.admin.elastic-password'),
-      type: 'password',
-    })
-    .registerSetting({
-      setting: 'blomstra-search.elastic-index',
-      label: app.translator.trans('blomstra-search.admin.elastic-index'),
-      default: 'flarum',
-      type: 'input',
+    .registerSetting(function (this: any) {
+      // A connection from config.php makes these four settings ignored: say where it comes
+      // from instead of offering fields that do nothing.
+      const connection = app.data.blomstraSearchConnection;
+
+      if (connection?.fromConfig) {
+        const note = connection.managed ? 'managed-by-host' : 'connection-from-config';
+
+        return m('.Form-group', m('p.helpText', app.translator.trans(`blomstra-search.admin.${note}`)));
+      }
+
+      return [
+        this.buildSettingComponent({
+          setting: 'blomstra-search.elastic-endpoint',
+          label: app.translator.trans('blomstra-search.admin.elastic-endpoint'),
+          type: 'input',
+        }),
+        this.buildSettingComponent({
+          setting: 'blomstra-search.elastic-username',
+          label: app.translator.trans('blomstra-search.admin.elastic-username'),
+          type: 'input',
+        }),
+        this.buildSettingComponent({
+          setting: 'blomstra-search.elastic-password',
+          label: app.translator.trans('blomstra-search.admin.elastic-password'),
+          type: 'password',
+        }),
+        this.buildSettingComponent({
+          setting: 'blomstra-search.elastic-index',
+          label: app.translator.trans('blomstra-search.admin.elastic-index'),
+          default: 'flarum',
+          type: 'input',
+        }),
+      ];
     })
     .registerSetting({
       setting: 'blomstra-search.search-discussion-subjects',
