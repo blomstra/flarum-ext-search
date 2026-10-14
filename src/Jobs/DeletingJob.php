@@ -12,12 +12,13 @@
 
 namespace Blomstra\Search\Jobs;
 
+use Blomstra\Search\LiveIndex;
 use Elasticsearch\Client;
 use Illuminate\Database\Eloquent\Model;
 
 class DeletingJob extends Job
 {
-    public function handle(Client $client)
+    public function handle(Client $client, LiveIndex $live)
     {
         if ($this->models->isEmpty()) {
             return;
@@ -29,14 +30,10 @@ class DeletingJob extends Job
             $routing  = $this->seeder->routing($model);
 
             return [
-                ['delete' => ['_index' => $this->index, '_id' => $document->id, 'routing' => $routing]],
+                ['delete' => ['_id' => $document->id, 'routing' => $routing]],
             ];
         })->flatten(1);
 
-        $response = $client->bulk([
-            'index'   => $this->index,
-            'body'    => $body->toArray(),
-            'refresh' => true,
-        ]);
+        $this->bulk($client, $live, $body->toArray(), 'delete', ['refresh' => true]);
     }
 }

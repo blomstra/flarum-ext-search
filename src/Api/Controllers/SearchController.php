@@ -16,6 +16,7 @@ use Blomstra\Search\Elasticsearch\HasChildQuery;
 use Blomstra\Search\Elasticsearch\MatchPhraseQuery;
 use Blomstra\Search\Elasticsearch\MatchQuery;
 use Blomstra\Search\Elasticsearch\TermsQuery;
+use Blomstra\Search\LiveIndex;
 use Blomstra\Search\TextNormalizer;
 use Blomstra\Search\Searchers\CommentPostSearcher;
 use Blomstra\Search\Searchers\DiscussionSearcher;
@@ -39,6 +40,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
+use RuntimeException;
 use Spatie\ElasticsearchQueryBuilder\Builder;
 use Blomstra\Search\Elasticsearch\BoolQuery;
 use Spatie\ElasticsearchQueryBuilder\Queries\TermQuery;
@@ -64,7 +66,7 @@ class SearchController extends ListDiscussionsController
     protected ?Searcher $discussionSearcher;
     protected ?Searcher $postSearcher;
 
-    public function __construct(protected Client $elastic, protected UrlGenerator $uri, Container $container, SettingsRepositoryInterface $settings, protected Cache $cache)
+    public function __construct(protected Client $elastic, protected UrlGenerator $uri, Container $container, SettingsRepositoryInterface $settings, protected Cache $cache, protected LiveIndex $liveIndex)
     {
         $this->matchSentences = true;
         $this->matchWords     = true;
@@ -119,8 +121,11 @@ class SearchController extends ListDiscussionsController
 
         $this->addFilters($query, $actor, $filters);
 
+        // Never without one: a search without an index searches every index.
+        $index = $this->liveIndex->name() ?? throw new RuntimeException('blomstra/search: there is no live index, run blomstra:search:index build.');
+
         $builder = (new Builder($this->elastic))
-            ->index(resolve('blomstra.search.elastic_index'))
+            ->index($index)
             ->addQuery($query);
 
         foreach ($sorts as $sort) {
@@ -155,7 +160,7 @@ class SearchController extends ListDiscussionsController
         }
 
         $response = $this->elastic->search([
-            'index' => resolve('blomstra.search.elastic_index'),
+            'index' => $index,
             'size'  => $limit + 1,
             'from'  => $offset,
             'body'  => $payload,

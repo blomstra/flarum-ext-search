@@ -12,19 +12,28 @@
 
 namespace Blomstra\Search\Tests\integration\console;
 
-use Blomstra\Search\Elasticsearch\AliasLookup;
+use Blomstra\Search\Exceptions\SeedingException;
+use Blomstra\Search\Jobs\DeletingJob;
+use Blomstra\Search\Jobs\PromoteIndexJob;
+use Blomstra\Search\LiveIndex;
+use Blomstra\Search\Seeders\DiscussionSeeder;
 use Carbon\Carbon;
 use Elasticsearch\Client;
+use Flarum\Discussion\Discussion;
+use Flarum\Settings\DatabaseSettingsRepository;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\Testing\integration\ConsoleTestCase;
 use Flarum\Testing\integration\RetrievesAuthorizedUsers;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
+use Psr\Log\NullLogger;
 
 /**
  * The index lifecycle and search against a real search server, through the connection from
  * config.php and with the credentials a host would hand a forum: a user whose role covers only
- * `<index>*`. Skipped unless SEARCH_TEST_ENDPOINT, SEARCH_TEST_USERNAME, SEARCH_TEST_PASSWORD and
- * SEARCH_TEST_INDEX are set. Every index under that prefix is deleted before each test.
+ * `<index>_*`. Skipped unless SEARCH_TEST_ENDPOINT, SEARCH_TEST_USERNAME, SEARCH_TEST_PASSWORD and
+ * SEARCH_TEST_INDEX are set. Give it a user without alias permissions, so any alias call fails a
+ * test. Every index under that prefix is deleted before each test.
  *
  * Flarum's default queue is synchronous, so a build's jobs (seeding, promotion) have all run by
  * the time the command returns.
@@ -33,7 +42,7 @@ class OpenSearchRoundTripTest extends ConsoleTestCase
 {
     use RetrievesAuthorizedUsers;
 
-    private string $alias;
+    private string $prefix;
 
     protected function setUp(): void
     {
@@ -43,14 +52,14 @@ class OpenSearchRoundTripTest extends ConsoleTestCase
             $this->markTestSkipped('No search server: set SEARCH_TEST_ENDPOINT, SEARCH_TEST_USERNAME, SEARCH_TEST_PASSWORD and SEARCH_TEST_INDEX.');
         }
 
-        $this->alias = (string) getenv('SEARCH_TEST_INDEX');
+        $this->prefix = (string) getenv('SEARCH_TEST_INDEX');
 
         $this->extension('blomstra-search');
         $this->config('search', [
             'endpoint' => getenv('SEARCH_TEST_ENDPOINT'),
             'username' => getenv('SEARCH_TEST_USERNAME'),
             'password' => getenv('SEARCH_TEST_PASSWORD'),
-            'index'    => $this->alias,
+            'index'    => $this->prefix,
         ]);
 
         $at = Carbon::now()->subDay();
@@ -122,15 +131,15 @@ class OpenSearchRoundTripTest extends ConsoleTestCase
     }
 
     /** @test */
-    public function a_rebuild_swaps_the_alias_and_a_rollback_swaps_it_back()
+    public function a_rebuild_promotes_a_new_index_and_a_rollback_restores_the_old_one()
     {
         $this->build();
-        $first = $this->aliasTarget();
+        $first = $this->liveIndex();
 
         // Concrete indices are named to the second; a real rebuild never starts within one.
         sleep(1);
         $this->build(['--keep-backup' => true]);
-        $second = $this->aliasTarget();
+        $second = $this->liveIndex();
 
         $this->assertNotSame($first, $second, 'the rebuild promoted a new index');
         $this->assertSame($first, $this->settingValue('blomstra-search.backup-index'));
@@ -139,8 +148,47 @@ class OpenSearchRoundTripTest extends ConsoleTestCase
         $this->runCommand(['command' => 'blomstra:search:index', 'action' => 'rollback']);
         $this->refresh();
 
-        $this->assertSame($first, $this->aliasTarget(), 'the rollback restored the first index');
+        $this->assertSame($first, $this->liveIndex(), 'the rollback restored the first index');
+        $this->assertFalse($this->client()->indices()->exists(['index' => $second]), 'the rollback deleted the second index');
         $this->assertSame(['1'], $this->searchIds('Katze'), 'search works after the rollback');
+    }
+
+    /** @test */
+    public function a_staging_build_goes_live_on_promote()
+    {
+        $this->build();
+        $first = $this->liveIndex();
+
+        sleep(1);
+        $this->build(['--staging' => true]);
+        $staging = $this->settingValue('blomstra-search.staging-index');
+        $this->assertSame($first, $this->liveIndex(), 'a staging build leaves the live index alone');
+
+        $this->runCommand(['command' => 'blomstra:search:index', 'action' => 'promote', '--i-am-sure' => true]);
+        $this->refresh();
+
+        $this->assertSame($staging, $this->liveIndex());
+        $this->assertNull($this->settingValue('blomstra-search.staging-index'));
+        $this->assertFalse($this->client()->indices()->exists(['index' => $first]), 'without --keep-backup the old index is deleted');
+        $this->assertSame(['1'], $this->searchIds('Katze'));
+        $this->assertNoAliases();
+    }
+
+    /** @test */
+    public function discard_drops_a_staging_build()
+    {
+        $this->build();
+        $first = $this->liveIndex();
+
+        sleep(1);
+        $this->build(['--staging' => true]);
+        $staging = $this->settingValue('blomstra-search.staging-index');
+
+        $this->runCommand(['command' => 'blomstra:search:index', 'action' => 'discard', '--pending' => true]);
+
+        $this->assertFalse($this->client()->indices()->exists(['index' => $staging]));
+        $this->assertNull($this->settingValue('blomstra-search.staging-index'));
+        $this->assertSame($first, $this->liveIndex());
     }
 
     /** @test */
@@ -178,15 +226,85 @@ class OpenSearchRoundTripTest extends ConsoleTestCase
         $this->assertSame(['2'], $this->searchIds('Wellensittich'));
     }
 
+    /** @test */
+    public function hiding_a_discussion_removes_it_from_the_index()
+    {
+        $this->build();
+        $this->assertTrue($this->indexed('discussions:2'));
+
+        $response = $this->send($this->request('PATCH', '/api/discussions/2', [
+            'authenticatedAs' => 1,
+            'json'            => ['data' => ['attributes' => ['isHidden' => true]]],
+        ]));
+        $this->assertSame(200, $response->getStatusCode(), (string) $response->getBody());
+
+        // From the index itself: the visibility check would drop it from results anyway.
+        $this->assertFalse($this->indexed('discussions:2'));
+    }
+
+    /** @test */
+    public function a_worker_writes_to_the_index_another_process_promoted()
+    {
+        $this->build();
+        $old = $this->liveIndex();
+
+        sleep(1);
+        $this->build(['--staging' => true]);
+
+        // This process has cached its settings; the promote runs as another process would, with
+        // settings of its own.
+        $this->assertSame($old, $this->app()->getContainer()->make(SettingsRepositoryInterface::class)->get(LiveIndex::SETTING));
+        $this->promoteElsewhere();
+
+        $response = $this->send($this->request('POST', '/api/posts', [
+            'authenticatedAs' => 1,
+            'json'            => ['data' => ['attributes' => ['content' => 'Ein Wellensittich ist eingezogen.'], 'relationships' => ['discussion' => ['data' => ['type' => 'discussions', 'id' => '2']]]]],
+        ]));
+        $this->assertSame(201, $response->getStatusCode(), (string) $response->getBody());
+        $this->refresh();
+
+        $this->assertSame(['2'], $this->searchIds('Wellensittich'));
+        $this->assertFalse($this->client()->indices()->exists(['index' => $old]), 'the reply did not recreate the old index');
+    }
+
+    /** @test */
+    public function a_delete_that_raced_a_promote_fails_for_a_retry()
+    {
+        $this->build();
+
+        // The live index as a promote leaves it for a job that read the setting just before.
+        $this->client()->indices()->delete(['index' => $this->liveIndex()]);
+
+        $job = new DeletingJob(Collection::make([Discussion::find(2)]), $this->app()->getContainer()->make(DiscussionSeeder::class));
+
+        $this->expectException(SeedingException::class);
+        $job->handle($this->client(), $this->app()->getContainer()->make(LiveIndex::class));
+    }
+
     private function build(array $options = []): void
     {
         $output = $this->runCommand(['command' => 'blomstra:search:index', 'action' => 'build'] + $options);
 
         $this->assertTrue(
-            $this->client()->indices()->existsAlias(AliasLookup::params($this->alias)),
-            "the build left no alias. Its output:\n$output"
+            $this->client()->indices()->exists(['index' => $this->liveIndex()]),
+            "the build left no live index. Its output:\n$output"
         );
+        $this->assertNoAliases();
         $this->refresh();
+    }
+
+    private function promoteElsewhere(): void
+    {
+        $settings = new DatabaseSettingsRepository($this->database());
+
+        (new PromoteIndexJob())->handle($this->client(), $settings, new LiveIndex($this->database(), $settings), new NullLogger());
+    }
+
+    private function assertNoAliases(): void
+    {
+        foreach ($this->client()->indices()->get(['index' => "{$this->prefix}_*"]) as $index => $definition) {
+            $this->assertEmpty($definition['aliases'], "'$index' has an alias");
+        }
     }
 
     /**
@@ -209,14 +327,19 @@ class OpenSearchRoundTripTest extends ConsoleTestCase
         return json_decode((string) $response->getBody(), true)['data'];
     }
 
-    private function aliasTarget(): string
+    private function liveIndex(): string
     {
-        return array_keys($this->client()->indices()->getAlias(AliasLookup::params($this->alias)))[0];
+        return (string) $this->settingValue(LiveIndex::SETTING);
+    }
+
+    private function indexed(string $id): bool
+    {
+        return $this->client()->exists(['index' => $this->liveIndex(), 'id' => $id, 'routing' => explode(':', $id)[1]]);
     }
 
     private function refresh(): void
     {
-        $this->client()->indices()->refresh(['index' => $this->alias]);
+        $this->client()->indices()->refresh(['index' => "{$this->prefix}_*"]);
     }
 
     private function settingValue(string $key): ?string
@@ -235,7 +358,7 @@ class OpenSearchRoundTripTest extends ConsoleTestCase
      */
     private function deleteIndices(): void
     {
-        foreach (array_keys($this->client()->indices()->get(['index' => "$this->alias*", 'ignore_unavailable' => true])) as $index) {
+        foreach (array_keys($this->client()->indices()->get(['index' => "{$this->prefix}_*", 'ignore_unavailable' => true])) as $index) {
             $this->client()->indices()->delete(['index' => $index]);
         }
     }

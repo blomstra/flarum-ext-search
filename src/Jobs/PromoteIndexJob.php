@@ -14,7 +14,7 @@ namespace Blomstra\Search\Jobs;
 
 use Blomstra\Search\Commands\BuildCommand;
 use Blomstra\Search\Commands\SavesIndexedConfig;
-use Blomstra\Search\Elasticsearch\AliasLookup;
+use Blomstra\Search\LiveIndex;
 use Elasticsearch\Client;
 use Flarum\Queue\AbstractJob;
 use Flarum\Settings\SettingsRepositoryInterface;
@@ -25,7 +25,6 @@ class PromoteIndexJob extends AbstractJob
     use SavesIndexedConfig;
 
     public function __construct(
-        private string $alias,
         private bool $keepBackup = false,
         private ?string $onQueue = null
     ) {
@@ -34,7 +33,7 @@ class PromoteIndexJob extends AbstractJob
         }
     }
 
-    public function handle(Client $client, SettingsRepositoryInterface $settings, LoggerInterface $logger): void
+    public function handle(Client $client, SettingsRepositoryInterface $settings, LiveIndex $live, LoggerInterface $logger): void
     {
         $staging = $settings->get('blomstra-search.staging-index');
 
@@ -43,45 +42,24 @@ class PromoteIndexJob extends AbstractJob
             return;
         }
 
-        $aliasExists = (bool) $client->indices()->existsAlias(AliasLookup::params($this->alias));
-        $indexExists = !$aliasExists && (bool) $client->indices()->exists(['index' => $this->alias]);
-
-        if ($aliasExists) {
-            $result      = $client->indices()->getAlias(AliasLookup::params($this->alias));
-            $activeIndex = array_key_first($result);
-
-            $client->indices()->updateAliases([
-                'body' => ['actions' => [
-                    ['remove' => ['index' => $activeIndex,  'alias' => $this->alias]],
-                    ['add'    => ['index' => $staging,      'alias' => $this->alias]],
-                ]],
-            ]);
-
-            if ($this->keepBackup) {
-                $settings->set('blomstra-search.backup-index', $activeIndex);
-                $logger->info("blomstra/search: promoted '$staging' to '{$this->alias}', kept '$activeIndex' as backup.");
-            } else {
-                $client->indices()->delete(['index' => $activeIndex, 'ignore_unavailable' => true]);
-                $logger->info("blomstra/search: promoted '$staging' to '{$this->alias}', deleted '$activeIndex'.");
-            }
-        } else {
-            // One-time migration: concrete index → alias (legacy installs only).
-            if ($indexExists) {
-                $client->indices()->delete(['index' => $this->alias]);
-            }
-
-            $client->indices()->putAlias(['index' => $staging, 'name' => $this->alias]);
-            $logger->info("blomstra/search: promoted '$staging' to '{$this->alias}'.");
-        }
-
         $client->indices()->putSettings([
             'index' => $staging,
             'body'  => ['index' => ['refresh_interval' => BuildCommand::REFRESH_INTERVAL_LIVE]],
         ]);
 
-        $settings->set('blomstra-search.active-index', $staging);
+        $previous = $live->switchTo($staging);
+
         $settings->set('blomstra-search.staging-index', null);
         $this->saveIndexedConfig($client, $settings, $staging);
-    }
 
+        if (!$previous) {
+            $logger->info("blomstra/search: promoted '$staging'.");
+        } elseif ($this->keepBackup) {
+            $settings->set('blomstra-search.backup-index', $previous);
+            $logger->info("blomstra/search: promoted '$staging', kept '$previous' as backup.");
+        } else {
+            $client->indices()->delete(['index' => $previous, 'ignore_unavailable' => true]);
+            $logger->info("blomstra/search: promoted '$staging', deleted '$previous'.");
+        }
+    }
 }

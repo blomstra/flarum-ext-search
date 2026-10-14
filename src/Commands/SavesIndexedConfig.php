@@ -21,7 +21,7 @@ trait SavesIndexedConfig
     /**
      * Persist the analysis config and compat version actually live in ES for the given index.
      * Reading from ES (rather than from Flarum settings) means rollbacks are covered: the
-     * stored values always reflect the aliased index, not the settings at command run time.
+     * stored values always reflect the live index, not the settings at command run time.
      * Indexes built before _meta tracking existed yield a null compat version, which
      * correctly triggers the reindex warning.
      */

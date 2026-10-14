@@ -70,10 +70,6 @@ class Provider extends AbstractServiceProvider
             return $builder->build();
         });
 
-        $this->container->bind('blomstra.search.elastic_index', function (Container $container) {
-            return $container->make(Connection::class)->index();
-        });
-
         $this->container->extend(
             Client::class,
             function () {

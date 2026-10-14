@@ -91,7 +91,7 @@ class Connection
     }
 
     /**
-     * The alias searches and live updates go to. Concrete indices are `<index>_YmdHis`.
+     * The prefix of the forum's indices, which are named `<index>_YmdHis`.
      */
     public function index(): string
     {

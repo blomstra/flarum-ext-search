@@ -12,10 +12,11 @@
 
 namespace Blomstra\Search\Commands;
 
-use Blomstra\Search\Elasticsearch\AliasLookup;
+use Blomstra\Search\Connection;
 use Blomstra\Search\Jobs\Job;
 use Blomstra\Search\Jobs\PromoteIndexJob;
 use Blomstra\Search\Jobs\UpdateSearchJob;
+use Blomstra\Search\LiveIndex;
 use Blomstra\Search\Seeders\Seeder;
 use Elasticsearch\Client;
 use Elasticsearch\Common\Exceptions\ElasticsearchException;
@@ -76,7 +77,7 @@ class BuildCommand extends Command
     <comment>--staging</comment>        Keep in staging — requires explicit <info>promote</info> (blue-green)
     <comment>--keep-backup</comment>    Retain the replaced index for rollback
 
-  <info>promote</info>               Swap alias to staging index (blue-green workflow).
+  <info>promote</info>               Make the staging index live (blue-green workflow).
     <comment>--keep-backup</comment>    Retain the replaced index for rollback
     <comment>--i-am-sure</comment>      Skip the confirmation prompt
 
@@ -97,7 +98,7 @@ class BuildCommand extends Command
   <comment>--max-id=N</comment>        Limit seeding to IDs up to this value
 HELP;
 
-    public function handle(Container $container): void
+    public function handle(Container $container, LiveIndex $live): void
     {
         /** @var Client $client */
         $client = $container->make(Client::class);
@@ -105,8 +106,7 @@ HELP;
         /** @var SettingsRepositoryInterface $settings */
         $settings = $container->make(SettingsRepositoryInterface::class);
 
-        /** @var string $alias */
-        $alias = $container->make('blomstra.search.elastic_index');
+        $prefix = $container->make(Connection::class)->index();
 
         if ($queue = $this->option('queue')) {
             Job::$onQueue = $queue;
@@ -119,15 +119,15 @@ HELP;
 
         switch ($this->argument('action')) {
             case 'build':
-                $this->runBuild($client, $alias, $settings, $container);
+                $this->runBuild($client, $prefix, $settings, $live, $container);
                 break;
 
             case 'promote':
-                $this->runPromote($client, $alias, $settings);
+                $this->runPromote($client, $settings, $live);
                 break;
 
             case 'rollback':
-                $this->runRollback($client, $alias, $settings);
+                $this->runRollback($client, $settings, $live);
                 break;
 
             case 'discard':
@@ -135,22 +135,26 @@ HELP;
                 break;
 
             case 'mapping':
-                $client->indices()->putMapping([
-                    'index' => $alias,
-                    'body'  => $this->mappingProperties(),
-                ]);
-                $this->info('Mapping updated on live index.');
+                if ($index = $this->liveIndexName($live)) {
+                    $client->indices()->putMapping([
+                        'index' => $index,
+                        'body'  => $this->mappingProperties(),
+                    ]);
+                    $this->info('Mapping updated on live index.');
+                }
                 break;
 
             case 'fill':
-                $this->runSeeders(
-                    collect($container->tagged('blomstra.search.seeders')),
-                    $container->make(Queue::class),
-                    $client,
-                    $settings,
-                    $alias,
-                    seedMissing: true
-                );
+                if ($index = $this->liveIndexName($live)) {
+                    $this->runSeeders(
+                        collect($container->tagged('blomstra.search.seeders')),
+                        $container->make(Queue::class),
+                        $client,
+                        $settings,
+                        null,
+                        missingFrom: $index
+                    );
+                }
                 break;
 
             default:
@@ -158,7 +162,7 @@ HELP;
         }
     }
 
-    protected function runBuild(Client $client, string $alias, SettingsRepositoryInterface $settings, Container $container): void
+    protected function runBuild(Client $client, string $prefix, SettingsRepositoryInterface $settings, LiveIndex $live, Container $container): void
     {
         /** @var Seeder[] $seeders */
         $seeders = collect($container->tagged('blomstra.search.seeders'));
@@ -178,16 +182,15 @@ HELP;
             return;
         }
 
-        $aliasExists = (bool) $client->indices()->existsAlias(AliasLookup::params($alias));
-        $indexExists = !$aliasExists && (bool) $client->indices()->exists(['index' => $alias]);
+        $active = $live->name();
 
-        if (!$aliasExists && !$indexExists) {
-            // First install: create a timestamped index, alias it immediately, seed live.
-            $targetIndex  = $this->prepareFirstInstall($client, $alias, $settings, $seeders);
+        if (!$active || !$client->indices()->exists(['index' => $active])) {
+            // First install: create a timestamped index, make it live immediately, seed live.
+            $targetIndex  = $this->prepareFirstInstall($client, $prefix, $settings, $live, $seeders);
             $stagingBuild = false;
         } else {
-            // Live system: build into a staging index without touching the live alias.
-            $targetIndex  = $this->prepareStagingIndex($client, $alias, $settings, $seeders);
+            // Live system: build into a staging index without touching the live one.
+            $targetIndex  = $this->prepareStagingIndex($client, $prefix, $settings, $seeders);
             $stagingBuild = true;
         }
 
@@ -196,7 +199,8 @@ HELP;
             'body'  => $this->mappingProperties(),
         ]);
 
-        $this->runSeeders($seeders, $container->make(Queue::class), $client, $settings, $targetIndex);
+        // A first build seeds whichever index is live when each job runs.
+        $this->runSeeders($seeders, $container->make(Queue::class), $client, $settings, $stagingBuild ? $targetIndex : null);
 
         if ($stagingBuild) {
             $staging = $settings->get('blomstra-search.staging-index');
@@ -207,13 +211,13 @@ HELP;
                 $this->line('  php flarum blomstra:search:index promote');
             } else {
                 $queue = $container->make(Queue::class);
-                $queue->pushOn(Job::$onQueue, new PromoteIndexJob($alias, $this->option('keep-backup'), Job::$onQueue));
+                $queue->pushOn(Job::$onQueue, new PromoteIndexJob($this->option('keep-backup'), Job::$onQueue));
                 $this->info("Jobs queued. '$staging' will be promoted automatically once the queue has drained.");
             }
         }
     }
 
-    protected function runPromote(Client $client, string $alias, SettingsRepositoryInterface $settings): void
+    protected function runPromote(Client $client, SettingsRepositoryInterface $settings, LiveIndex $live): void
     {
         if (!$this->option('i-am-sure')) {
             $this->warn('promote switches the live index. Ensure all queued jobs have finished first:');
@@ -225,10 +229,10 @@ HELP;
             }
         }
 
-        $this->performPromote($client, $alias, $settings);
+        $this->performPromote($client, $settings, $live);
     }
 
-    protected function performPromote(Client $client, string $alias, SettingsRepositoryInterface $settings): void
+    protected function performPromote(Client $client, SettingsRepositoryInterface $settings, LiveIndex $live): void
     {
         $staging = $settings->get('blomstra-search.staging-index');
 
@@ -237,13 +241,13 @@ HELP;
             return;
         }
 
-        $job = new PromoteIndexJob($alias, $this->option('keep-backup'));
-        $job->handle($client, $settings, resolve('log'));
+        $job = new PromoteIndexJob($this->option('keep-backup'));
+        $job->handle($client, $settings, $live, resolve('log'));
 
-        $this->info("'$alias' now points to '$staging'. Promote complete.");
+        $this->info("'$staging' is live. Promote complete.");
     }
 
-    protected function runRollback(Client $client, string $alias, SettingsRepositoryInterface $settings): void
+    protected function runRollback(Client $client, SettingsRepositoryInterface $settings, LiveIndex $live): void
     {
         $backup = $settings->get('blomstra-search.backup-index');
 
@@ -252,22 +256,17 @@ HELP;
             return;
         }
 
-        $result      = $client->indices()->getAlias(AliasLookup::params($alias));
-        $activeIndex = array_key_first($result);
+        $previous = $live->switchTo($backup);
 
-        $client->indices()->updateAliases([
-            'body' => ['actions' => [
-                ['remove' => ['index' => $activeIndex, 'alias' => $alias]],
-                ['add'    => ['index' => $backup,      'alias' => $alias]],
-            ]],
-        ]);
-
-        $client->indices()->delete(['index' => $activeIndex, 'ignore_unavailable' => true]);
-        $this->info("Rolled back: '$alias' now points to '$backup'. Deleted '$activeIndex'.");
-
-        $settings->set('blomstra-search.active-index', $backup);
         $settings->set('blomstra-search.backup-index', null);
         $this->saveIndexedConfig($client, $settings, $backup);
+
+        if ($previous) {
+            $client->indices()->delete(['index' => $previous, 'ignore_unavailable' => true]);
+            $this->info("Rolled back: '$backup' is live. Deleted '$previous'.");
+        } else {
+            $this->info("Rolled back: '$backup' is live.");
+        }
     }
 
     protected function runDiscard(Client $client, SettingsRepositoryInterface $settings): void
@@ -309,13 +308,17 @@ HELP;
         }
     }
 
+    /**
+     * @param string|null $targetIndex  Null for the live index, resolved when each job runs.
+     * @param string|null $missingFrom  Seed only the documents missing from this index.
+     */
     protected function runSeeders(
         iterable $seeders,
         Queue $queue,
         Client $client,
         SettingsRepositoryInterface $settings,
-        string $targetIndex,
-        bool $seedMissing = false
+        ?string $targetIndex,
+        ?string $missingFrom = null
     ): void {
         $only = $this->option('only');
 
@@ -346,8 +349,8 @@ HELP;
                 $rangeFrom = max(1, $continueAt - 2500);
                 $rangeTo   = $continueAt;
 
-                if ($seedMissing) {
-                    $seeded = $this->queryIndexedIds($client, $targetIndex, $seeder->joinRelation(), $rangeFrom, $rangeTo);
+                if ($missingFrom) {
+                    $seeded = $this->queryIndexedIds($client, $missingFrom, $seeder->joinRelation(), $rangeFrom, $rangeTo);
                 }
 
                 /** @var Collection $collection */
@@ -360,7 +363,7 @@ HELP;
 
                 $min = $collection->min('id');
 
-                if ($seedMissing && $collection->isEmpty()) {
+                if ($missingFrom && $collection->isEmpty()) {
                     $continueAt = $rangeFrom > 2 ? $rangeFrom - 1 : null;
                 } else {
                     $continueAt = $min && $min > 2 ? $min - 1 : null;
@@ -387,16 +390,17 @@ HELP;
     }
 
     /**
-     * First install: create a timestamped concrete index, alias the configured name to it
-     * immediately, and return the alias so seeding goes through it and is live from the start.
+     * First install: create a timestamped concrete index and make it live immediately, so search
+     * works while it is seeded.
      */
     protected function prepareFirstInstall(
         Client $client,
-        string $alias,
+        string $prefix,
         SettingsRepositoryInterface $settings,
+        LiveIndex $live,
         iterable $seeders
     ): string {
-        $concrete = $alias . '_' . date('YmdHis');
+        $concrete = $prefix . '_' . date('YmdHis');
 
         // With the mapping, not only the settings: saveIndexedConfig() below reads the analyzer
         // and compat version from the mapping's _meta, which must exist by then.
@@ -408,19 +412,17 @@ HELP;
             ],
         ]);
 
-        $client->indices()->putAlias(['index' => $concrete, 'name' => $alias]);
-
-        $settings->set('blomstra-search.active-index', $concrete);
+        $live->switchTo($concrete);
         $this->saveIndexedConfig($client, $settings, $concrete);
 
         foreach ($seeders as $seeder) {
             $this->setContinueAt($settings, $seeder->type(), null);
         }
 
-        $this->info("Created '$concrete', aliased '$alias' → '$concrete'.");
+        $this->info("Created '$concrete' and made it live.");
         $this->info("Index is live — documents become searchable as the queue processes.");
 
-        return $alias;
+        return $concrete;
     }
 
     /**
@@ -431,7 +433,7 @@ HELP;
      */
     protected function prepareStagingIndex(
         Client $client,
-        string $alias,
+        string $prefix,
         SettingsRepositoryInterface $settings,
         iterable $seeders
     ): string {
@@ -451,7 +453,7 @@ HELP;
             return $staging;
         }
 
-        $staging = $alias . '_' . date('YmdHis');
+        $staging = $prefix . '_' . date('YmdHis');
 
         $client->indices()->create([
             'index' => $staging,
@@ -579,6 +581,17 @@ HELP;
                 sleep(65); // outlast the StaticNoPingConnectionPool dead-node window (default 60 s)
             }
         }
+    }
+
+    protected function liveIndexName(LiveIndex $live): ?string
+    {
+        $index = $live->name();
+
+        if (!$index) {
+            $this->error('There is no live index yet. Run: blomstra:search:index build');
+        }
+
+        return $index;
     }
 
     protected function getContinueAt(SettingsRepositoryInterface $settings, string $type): ?int

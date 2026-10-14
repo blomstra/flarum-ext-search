@@ -12,6 +12,7 @@
 
 namespace Blomstra\Search\Jobs;
 
+use Blomstra\Search\LiveIndex;
 use Elasticsearch\Client;
 use Flarum\Api\Serializer\DiscussionSerializer;
 use Flarum\Discussion\Discussion;
@@ -19,12 +20,10 @@ use Flarum\Queue\AbstractJob;
 
 class ViewsSearchJob extends AbstractJob
 {
-    protected string $index;
     protected string $documentType;
 
     public function __construct(protected int $discussionId)
     {
-        $this->index        = resolve('blomstra.search.elastic_index');
         $this->documentType = resolve(DiscussionSerializer::class)->getType(new Discussion());
 
         if (Job::$onQueue) {
@@ -32,11 +31,12 @@ class ViewsSearchJob extends AbstractJob
         }
     }
 
-    public function handle(Client $client): void
+    public function handle(Client $client, LiveIndex $live): void
     {
+        $index      = $live->name();
         $discussion = Discussion::find($this->discussionId);
 
-        if (!$discussion) {
+        if (!$index || !$discussion) {
             return;
         }
 
@@ -44,7 +44,7 @@ class ViewsSearchJob extends AbstractJob
 
         try {
             $client->update([
-                'index'             => $this->index,
+                'index'             => $index,
                 'id'                => "$type:{$this->discussionId}",
                 'routing'           => (string) $this->discussionId,
                 'retry_on_conflict' => 3,

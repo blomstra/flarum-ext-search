@@ -12,15 +12,14 @@
 
 namespace Blomstra\Search\Jobs;
 
-use Blomstra\Search\Exceptions\SeedingException;
+use Blomstra\Search\LiveIndex;
 use Elasticsearch\Client;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Arr;
 
 class UpdateSearchJob extends Job
 {
-    public function handle(Client $client)
+    public function handle(Client $client, LiveIndex $live)
     {
         if ($this->models->isEmpty()) {
             return;
@@ -34,29 +33,12 @@ class UpdateSearchJob extends Job
             $routing  = $this->seeder->routing($model);
 
             return [
-                ['index' => ['_index' => $this->index, '_id' => $document->id, 'routing' => $routing]],
+                ['index' => ['_id' => $document->id, 'routing' => $routing]],
                 $document->toArray(),
             ];
         })
         ->flatten(1);
 
-        $response = $client->bulk([
-            'index' => $this->index,
-            'body'  => $body->toArray(),
-        ]);
-
-        if (Arr::get($response, 'errors') !== true) {
-            return true;
-        }
-
-        $items = Arr::get($response, 'items');
-
-        $failed = array_filter($items, fn ($item) => isset($item['index']['error']));
-        $error  = Arr::get(Arr::first($failed), 'index.error.reason', 'unknown error');
-
-        throw new SeedingException(
-            "Failed to seed: $error (" . count($failed) . '/' . count($items) . ' items failed)',
-            $items
-        );
+        $this->bulk($client, $live, $body->toArray(), 'index');
     }
 }

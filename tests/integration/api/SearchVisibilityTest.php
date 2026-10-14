@@ -12,6 +12,7 @@
 
 namespace Blomstra\Search\Tests\integration\api;
 
+use Blomstra\Search\LiveIndex;
 use Carbon\Carbon;
 use Elasticsearch\Client;
 use Elasticsearch\ClientBuilder;
@@ -38,6 +39,9 @@ class SearchVisibilityTest extends TestCase
         $hidden = Carbon::now()->subDay();
 
         $this->prepareDatabase([
+            'settings' => [
+                ['key' => LiveIndex::SETTING, 'value' => 'flarum_20260101000000'],
+            ],
             'users' => [
                 $this->normalUser(),
             ],

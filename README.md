@@ -35,7 +35,7 @@ stored in the database:
     'endpoint' => 'http://opensearch:9200', // always with a port: without one the client uses 9200, even for https
     'username' => 'forum-1',
     'password' => '...',
-    'index'    => 'forum-1',                // alias name, default `flarum`
+    'index'    => 'forum-1',                // index prefix, default `flarum`
     'managed'  => true,                     // optional, see below
 ],
 ```
@@ -47,6 +47,36 @@ connection instead.
 Only the connection moves. What the build command records about the index (the live, staging
 and backup index names, the indexed analyzer) stays in the database settings, whichever
 connection wrote it.
+
+### The search server
+
+The forum's indices are named `<index>_<timestamp>`, and the one that is live is recorded in the
+`blomstra-search.active-index` setting; a promote or rollback changes that setting. The extension
+uses no aliases, so several forums can share one server: OpenSearch's security plugin authorizes
+an alias change on the index it points at, never on the alias name, so a forum allowed to change
+aliases could add its own index to another forum's alias and receive that forum's writes.
+
+The forum's user needs, on OpenSearch, `indices:data/write/bulk` on the cluster and, on
+`<index>_*`, `indices:admin/create`, `indices:admin/delete`, `indices:admin/get`,
+`indices:admin/mapping/put`, `indices:admin/mappings/get`, `indices:admin/settings/update`,
+`indices:monitor/settings/get`, `indices:data/read/*` and `indices:data/write/*` (plus
+`indices:admin/refresh*` for the tests).
+
+Set `action.auto_create_index` to `false` on the server: a queued job that read the live index
+just before a promote deleted it then fails and is retried against the new one, instead of
+recreating the old index. Without it, the job recreates the old index for that one document: the
+document is missing from search until the next `fill`, and the recreated index stays behind. An
+`<index>_*` index that is neither the live, staging nor backup index can be deleted.
+
+### Upgrading
+
+From 0.2: nothing to do. The alias those versions created is no longer used, and goes with its
+index on the next promote.
+
+From 0.1.x: those versions searched a concrete index named exactly like the `index` setting. Search
+fails until the first build, so run `blomstra:search:index build` right after updating: it builds a
+new index and makes it live immediately, so results are incomplete until the queue has processed
+it. Then delete the old index.
 
 ## Development
 
@@ -65,13 +95,14 @@ SEARCH_TEST_ENDPOINT=http://localhost:9200 SEARCH_TEST_USERNAME=forum-1 \
 SEARCH_TEST_PASSWORD=... SEARCH_TEST_INDEX=forum-1 composer test:integration
 ```
 
-Every index matching `SEARCH_TEST_INDEX*` is deleted before each test.
+Give it a user with the permissions above and no more, so any call the extension should not make
+fails a test. Every index matching `SEARCH_TEST_INDEX_*` is deleted before each test.
 
 ## Setting up the index
 
 ### First install
 
-Run the build command once. It creates a timestamped concrete index, immediately aliases your configured index name to it, and begins queuing documents. Search is available and improves as the queue processes:
+Run the build command once. It creates a timestamped concrete index, immediately makes it live, and begins queuing documents. Search is available and improves as the queue processes:
 
 ```bash
 php flarum blomstra:search:index build
@@ -160,12 +191,12 @@ php flarum blomstra:search:index mapping
 
 | Command | Description |
 |---|---|
-| `build` | Rebuild the index and promote automatically once all jobs are queued. On first install, aliases immediately so search is live during seeding. |
+| `build` | Rebuild the index and promote automatically once all jobs are queued. On first install, the new index is live immediately so search works during seeding. |
 | `build --keep-backup` | Rebuild and promote, retaining the old index as a backup for rollback. |
 | `build --staging` | Build into a staging index without promoting — use `promote` when ready (blue-green workflow). |
 | `build --resume` | Resume an interrupted build from where each seeder left off. |
 | `build --fresh` | Drop the staging index and start completely fresh. |
-| `promote` | Atomically swap the alias to the staging index. Prompts for confirmation (blue-green workflow). |
+| `promote` | Make the staging index live. Prompts for confirmation (blue-green workflow). |
 | `promote --keep-backup` | Promote and retain the replaced live index as a backup for rollback. |
 | `rollback` | Restore the backup index to live. Deletes the index that was live. |
 | `discard --pending` | Drop the staging index without promoting (cancels an in-progress build). |

@@ -12,11 +12,12 @@
 
 namespace Blomstra\Search\Exceptions;
 
+use Exception;
 use Throwable;
 
-class SeedingException extends \Exception
+class SeedingException extends Exception
 {
-    public function __construct($message = '', public array $items, $code = 0, Throwable $previous = null)
+    public function __construct(string $message, public array $items, int $code = 0, ?Throwable $previous = null)
     {
         parent::__construct($message, $code, $previous);
     }
