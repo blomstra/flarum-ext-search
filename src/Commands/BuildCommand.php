@@ -52,6 +52,9 @@ class BuildCommand extends Command
     /** refresh_interval during a bulk reindex — reduces segment merges while staging is being filled. */
     public const REFRESH_INTERVAL_INDEXING = '60s';
 
+    /** IDs per seeding range; fill reads back at most this many indexed IDs per range. */
+    public const BATCH_SIZE = 2500;
+
     protected $signature = 'blomstra:search:index
         {action? : build | promote | rollback | discard | mapping | fill}
         {--fresh}
@@ -343,10 +346,14 @@ HELP;
                 $continueAt = $seeder->query()->max('id');
             }
 
+            if ($continueAt !== null && $this->option('max-id')) {
+                $continueAt = min($continueAt, (int) $this->option('max-id'));
+            }
+
             $seeded = null;
 
             while ($continueAt !== null) {
-                $rangeFrom = max(1, $continueAt - 2500);
+                $rangeFrom = max(1, $continueAt - self::BATCH_SIZE + 1);
                 $rangeTo   = $continueAt;
 
                 if ($missingFrom) {
@@ -357,17 +364,11 @@ HELP;
                 $collection = $seeder->query()
                     ->latest('id')
                     ->whereBetween('id', [$rangeFrom, $rangeTo])
-                    ->when($this->option('max-id'), fn ($q, $id) => $q->where('id', '<=', $id))
                     ->when($seeded, fn ($q, $seeded) => $q->whereNotIn('id', $seeded))
                     ->get();
 
-                $min = $collection->min('id');
-
-                if ($missingFrom && $collection->isEmpty()) {
-                    $continueAt = $rangeFrom > 2 ? $rangeFrom - 1 : null;
-                } else {
-                    $continueAt = $min && $min > 2 ? $min - 1 : null;
-                }
+                // An empty range is not the end: IDs below it may still be seedable.
+                $continueAt = $rangeFrom > 1 ? $rangeFrom - 1 : null;
 
                 if ($collection->isNotEmpty()) {
                     $queue->pushOn(Job::$onQueue, new UpdateSearchJob($collection, $seeder, $targetIndex));
@@ -561,7 +562,7 @@ HELP;
             try {
                 $response = (new Builder($client))
                     ->index($targetIndex)
-                    ->size(2500)
+                    ->size(self::BATCH_SIZE)
                     ->addQuery(
                         (new BoolQuery())
                             ->add((new RangeQuery('rawId'))->gte($rangeFrom)->lte($rangeTo))

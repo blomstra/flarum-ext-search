@@ -12,6 +12,7 @@
 
 namespace Blomstra\Search\Tests\integration\console;
 
+use Blomstra\Search\Commands\BuildCommand;
 use Blomstra\Search\Exceptions\SeedingException;
 use Blomstra\Search\Jobs\DeletingJob;
 use Blomstra\Search\Jobs\PromoteIndexJob;
@@ -209,6 +210,43 @@ class OpenSearchRoundTripTest extends ConsoleTestCase
         $this->refresh();
 
         $this->assertSame(['4'], $this->searchIds('Fahrrad'));
+    }
+
+    /** @test */
+    public function a_build_seeds_past_an_id_gap_down_to_id_1()
+    {
+        // Discussion 5001 leaves no seedable discussion in the range below it; post 2501 makes
+        // the range of posts below it start at 2, leaving only id 1 for the last range.
+        $at = Carbon::now();
+        $this->database()->table('discussions')->insert(['id' => 5001, 'title' => 'Fahrrad reparieren', 'user_id' => 1, 'comment_count' => 1, 'created_at' => $at, 'last_posted_at' => $at]);
+        $this->database()->table('posts')->insert(['id' => 2501, 'discussion_id' => 5001, 'number' => 1, 'user_id' => 1, 'type' => 'comment', 'content' => '<t><p>Der Schlauch ist kaputt.</p></t>', 'created_at' => $at]);
+        $this->database()->table('discussions')->where('id', 5001)->update(['first_post_id' => 2501, 'last_post_id' => 2501]);
+
+        $this->build();
+
+        $this->assertSame(['5001'], $this->searchIds('Schlauch'));
+        $this->assertSame(['1'], $this->searchIds('Katze'), 'a discussion below the gap');
+        $this->assertSame(['1'], $this->searchIds('Sofa'), 'post 1');
+    }
+
+    /** @test */
+    public function fill_queues_nothing_when_a_full_range_is_indexed()
+    {
+        $at = Carbon::now();
+        $posts = [];
+        for ($id = 5; $id <= BuildCommand::BATCH_SIZE + 4; $id++) {
+            $posts[] = ['id' => $id, 'discussion_id' => 2, 'number' => $id, 'user_id' => 1, 'type' => 'comment', 'content' => '<t><p>Antwort</p></t>', 'created_at' => $at];
+        }
+        foreach (array_chunk($posts, 500) as $chunk) {
+            $this->database()->table('posts')->insert($chunk);
+        }
+
+        $this->build();
+
+        $output = $this->runCommand(['command' => 'blomstra:search:index', 'action' => 'fill']);
+
+        $this->assertStringContainsString('Queued a total of 0 discussions', $output);
+        $this->assertStringContainsString('Queued a total of 0 posts', $output);
     }
 
     /** @test */
